@@ -1,36 +1,40 @@
-name: Wahab Prime Execution
+name: Wahab Stealth v10 ✅
 on:
-  push:
-    branches: [ main ]
+  schedule: - cron: '*/30 * * * *'
   workflow_dispatch:
 
 jobs:
-  autonomous_mission:
+  stealth:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
-      - name: 1. Strategic Code Retrieval
-        uses: actions/checkout@v4
-
-      - name: 2. Initialize Neural Environment
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: 3. Deployment of Technical Arsenal
-        run: |
-          npm install
-          npx playwright install --with-deps chromium
-
-      - name: 4. Unleash Wahab Engine
-        run: node index.js
-        env:
-          SHEET_URL: "${{ secrets.SHEET_URL }}"
-
-      - name: 5. Secure Evidence Package
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Wahab-Intelligence-Report
-          path: |
-            mission_log.txt
-            evidences/
+    - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b
+    
+    - uses: actions/setup-node@1e60f620b9541f168136bd8d9b1115e8497a4508
+      with: { node-version: 20 }
+      
+    - name: 📁 Create directories
+      run: mkdir -p evidences screenshots sessions logs
+      
+    - name: 📦 Install dependencies
+      run: npm ci --no-audit
+      
+    - name: 🧹 Install Playwright Chromium ✅
+      run: |
+        npx playwright install --with-deps chromium
+        npx playwright install-deps
+        
+    - name: 🚀 Run Stealth Engine
+      run: node index.js
+      env:
+        SHEET_URL: ${{ secrets.SHEET_URL }}
+        
+    - name: 📤 Upload Results
+      if: always()
+      uses: actions/upload-artifact@0b7f0a8d9377b7f7dd32b4fd8d0d095a4e3a2002
+      with:
+        name: wahab-results-${{ github.run_id }}
+        path: |
+          evidences/
+          mission_log.txt
+          screenshots/
