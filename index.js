@@ -1,93 +1,117 @@
 const { chromium } = require('playwright-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const { FingerprintGenerator } = require('fingerprint-generator');
-const { FingerprintInjector } = require('fingerprint-injector');
 const axios = require('axios');
-const fs = require('fs');
+const fs = require('fs').promises;
 
 chromium.use(StealthPlugin());
 
-async function WahabPrimeEngine() {
-    const fingerprintGenerator = new FingerprintGenerator();
-    const fingerprintInjector = new FingerprintInjector();
-    
-    if (!fs.existsSync('evidences')) fs.mkdirSync('evidences');
-    const logger = fs.createWriteStream('mission_log.txt', { flags: 'a' });
+async function WahabPrimeEngineV2() {
+    // ✅ Evidences & Logging
+    await fs.mkdir('evidences', { recursive: true });
+    const logger = await fs.open('mission_log.txt', 'a');
 
-    // Technical Blueprint: Launching with Anti-Detection Flags
+    // ✅ Chrome الحقيقي مع anti-detection
     const browser = await chromium.launch({
-        headless: true,
+        headless: false,
+        channel: 'chrome',
         args: [
             '--disable-blink-features=AutomationControlled',
-            '--no-sandbox',
-            '--disable-infobars'
+            '--no-sandbox', '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run', '--no-zygote',
+            '--disable-gpu', '--disable-extensions'
         ]
     });
 
     try {
-        const sheetRaw = await axios.get(process.env.SHEET_URL.replace(/\/edit.*$/, '/export?format=csv'));
-        const tasks = sheetRaw.data.split('\n').slice(1).filter(line => line.includes(','));
+        // ✅ Google Sheets CSV parsing محسن
+        const sheetRaw = await axios.get(process.env.SHEET_URL.replace(/\/edit.*$/, '/export?format=csv'), {
+            timeout: 30000
+        });
+        
+        const lines = sheetRaw.data.split('\n').filter(line => line.trim());
+        const tasks = lines.slice(1).map(line => {
+            const [id, url] = line.split(',').map(s => s.trim().replace(/"/g, ''));
+            return { id, url: url.startsWith('http') ? url : `https://${url}` };
+        }).filter(task => task.url);
 
-        for (const task of tasks) {
-            const [id, url] = task.split(',');
-            if (!url) continue;
+        logger.write(`[START] ${new Date().toISOString()} | Tasks: ${tasks.length}\n`);
 
-            // Generate unique human-like fingerprint for each request
-            const fingerprint = fingerprintGenerator.getFingerprint({
-                devices: ['desktop'],
-                operatingSystems: ['windows', 'macos']
+        // ✅ Task Processing مع Rate Limiting
+        for (let i = 0; i < tasks.length; i++) {
+            const { id, url } = tasks[i];
+            logger.write(`[${i+1}/${tasks.length}] Processing: ${id} -> ${url}\n`);
+
+            // ✅ Fingerprint حقيقي
+            const fp = new FingerprintGenerator().getFingerprint({
+                devices: ['desktop'], 
+                operatingSystems: ['windows']
             });
 
             const context = await browser.newContext({
-                userAgent: fingerprint.fingerprint.userAgent,
-                viewport: fingerprint.fingerprint.screen
+                userAgent: fp.useragent,
+                viewport: { width: 1920, height: 1080 },
+                locale: 'en-US',
+                timezoneId: 'Africa/Cairo'
             });
 
             const page = await context.newPage();
-            
-            // Humanize: Mouse movements and realistic delays
+
+            // ✅ Ultimate Stealth Script
             await page.addInitScript(() => {
+                // Remove webdriver property
+                delete navigator.__proto__.webdriver;
                 Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                
+                // Mock plugins & languages
+                Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+                Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
             });
 
             try {
-                logger.write(`[INIT] Accessing: ${id} -> ${url.trim()}\n`);
-                
-                // Adaptive Navigation with exponential backoff logic
-                const response = await page.goto(url.trim(), { 
-                    waitUntil: 'domcontentloaded', 
-                    timeout: 60000 
+                // ✅ Human-like navigation
+                await page.goto(url, { 
+                    waitUntil: 'networkidle', 
+                    timeout: 45000 
                 });
 
-                // Analysis Phase: Detecting Security Walls (Cloudflare/PerimeterX)
-                const pageTitle = await page.title();
-                const isBlocked = await page.evaluate(() => {
-                    return document.body.innerText.includes('Cloudflare') || 
-                           document.body.innerText.includes('Access Denied') ||
-                           document.querySelectorAll('iframe[src*="captcha"]').length > 0;
+                // ✅ Advanced WAF Detection
+                const checks = await page.evaluate(() => {
+                    const blocks = ['Cloudflare', 'DDoS', 'Access denied', 'hcaptcha', 'recaptcha'];
+                    const selectors = ['iframe[src*="captcha"]', '.cf-browser-check'];
+                    return {
+                        blocked: blocks.some(b => document.body.innerText.includes(b)),
+                        captcha: selectors.some(s => !!document.querySelector(s))
+                    };
                 });
 
-                // Strategic Interaction: Simulating a real student browsing
-                if (!isBlocked) {
-                    await page.mouse.move(Math.random() * 500, Math.random() * 500);
-                    await page.waitForTimeout(Math.floor(Math.random() * 5000) + 3000);
-                }
+                const status = checks.blocked || checks.captcha ? '🚫 BLOCKED' : '✅ SUCCESS';
+                logger.write(`[RESULT] ${id}: ${status}\n`);
 
-                const resultStatus = isBlocked ? "BLOCKED_BY_WAF" : (response.status() === 200 ? "SUCCESS_REAL" : "UNSTABLE");
-                
-                logger.write(`[RESULT] ${id}: ${resultStatus} | Title: ${pageTitle}\n`);
-                await page.screenshot({ path: `evidences/${id}.png`, fullPage: true });
+                // ✅ Evidence collection
+                await page.screenshot({ 
+                    path: `evidences/${id}_${Date.now()}.png`, 
+                    fullPage: true 
+                });
 
-            } catch (stepError) {
-                logger.write(`[ERROR] ${id}: ${stepError.message}\n`);
+            } catch (error) {
+                logger.write(`[ERROR] ${id}: ${error.message}\n`);
             }
+
             await context.close();
+            
+            // ✅ Human delay بين الـ tasks
+            await new Promise(r => setTimeout(r, 3000 + Math.random() * 5000));
         }
-    } catch (coreError) {
-        logger.write(`[FATAL] System Failure: ${coreError.message}\n`);
+
+    } catch (error) {
+        logger.write(`[FATAL] ${error.message}\n`);
     }
 
     await browser.close();
+    logger.close();
 }
 
-WahabPrimeEngine();
+WahabPrimeEngineV2().catch(console.error);
