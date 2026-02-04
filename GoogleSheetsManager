@@ -1,0 +1,47 @@
+async getReferralPlatforms() {
+  try {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+    
+    const schema = require('../config/referral-sites-schema');
+    const sheetName = schema.sheetName;
+    
+    // جلب البيانات من الورقة
+    const sheet = this.doc.sheetsByTitle[sheetName];
+    if (!sheet) {
+      throw new Error(`Sheet "${sheetName}" not found`);
+    }
+    
+    // تحميل الخلايا في النطاق المحدد
+    await sheet.loadCells(schema.dataRange);
+    
+    const platforms = [];
+    const [startRow, endRow] = this.parseRange(schema.dataRange);
+    
+    for (let row = startRow; row <= endRow; row++) {
+      const platformCell = sheet.getCell(row, schema.columns.platform);
+      const linkCell = sheet.getCell(row, schema.columns.link);
+      const countCell = sheet.getCell(row, schema.columns.count);
+      const statusCell = sheet.getCell(row, schema.columns.status);
+      
+      // التوقف إذا كان اسم المنصة فارغاً
+      if (!platformCell.value) break;
+      
+      platforms.push({
+        platform: platformCell.value,
+        link: linkCell.value,
+        count: parseInt(countCell.value) || 0,
+        status: statusCell.value || 'Pending',
+        rowNumber: row + 1 // +1 لأن الصفوف تبدأ من 1 في Google Sheets
+      });
+    }
+    
+    logger.info(`📊 Loaded ${platforms.length} referral platforms from sheet`);
+    return platforms;
+    
+  } catch (error) {
+    logger.error('Error loading referral platforms', error);
+    return [];
+  }
+}
