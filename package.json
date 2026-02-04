@@ -1,23 +1,4 @@
 {
-  "name": "wahab-stealth-engine",
-  "version": "10.2.0",
-  "description": "Wahab Stealth Engine for GitHub Actions",
-  "main": "index.js",
-  "scripts": {
-    "start": "node index.js",
-    "test": "node index.js"
-  },
-  "dependencies": {
-    "playwright": "^1.48.0",
-    "axios": "^1.7.7"
-  },
-  "engines": {
-    "node": ">=20.0.0"
-  },
-  "keywords": ["stealth", "playwright", "automation"],
-  "author": "abdokony-debug",
-  "license": "MIT"
-}
-"scripts": {
-  "start": "node index.js"
+  "scripts": { "start": "node index.js" },
+  "dependencies": { "playwright": "1.41.0" }
 }
