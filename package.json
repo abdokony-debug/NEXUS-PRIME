@@ -1,15 +1,16 @@
 {
-  "name": "wahab-reality-engine",
-  "version": "10.0.0",
-  "description": "Adaptive system for real-world verification and student support",
-  "main": "index.js",
+  "name": "wahab-prime-engine",
+  "version": "11.0.0",
+  "private": true,
   "dependencies": {
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "puppeteer-extra-plugin-anonymize-ua": "^2.4.6",
     "playwright": "^1.41.0",
     "axios": "^1.6.0",
-    "user-agents": "^1.1.0"
+    "user-agents": "^1.1.0",
+    "fingerprint-generator": "^2.1.0",
+    "fingerprint-injector": "^2.1.0"
   },
   "scripts": {
     "start": "node index.js"
