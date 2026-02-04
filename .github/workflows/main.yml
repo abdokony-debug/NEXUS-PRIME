@@ -6,36 +6,43 @@ on:
 
 jobs:
   stealth:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest # التغيير لـ latest لضمان الاستقرار
     timeout-minutes: 25
+    permissions:
+      contents: write
+      actions: write
     steps:
-    - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b
-    
-    - uses: actions/setup-node@1e60f620b9541f168136bd8d9b1115e8497a4508
-      with:
-        node-version: 20
-        cache: 'npm'
-    
-    - name: Install system deps
-      run: |
-        sudo apt-get update -y
-        sudo apt-get install -y libnss3 libatk-bridge2.0-0 libxss1 libasound2 libgbm1
-        
-    - name: npm install
-      run: npm install
-      
-    - name: Install Playwright Chromium
-      run: npx playwright install --with-deps chromium
-      
-    - name: Run engine
-      run: npm start
-      env:
-        SHEET_URL: ${{ secrets.SHEET_URL }}
-        
-    - uses: actions/upload-artifact@0b7f0a8d9377b7f7dd32b4fd8d0d095a4e3a2002
-      if: always()
-      with:
-        name: wahab-results-${{ github.run_id }}
-        path: |
-          evidences/
-          *.txt
+      - name: 1. Checkout
+        uses: actions/checkout@v4
+
+      - name: 2. Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 3. Install System Dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y libnss3 libatk-bridge2.0-0 libxss1 libasound2 libgbm1
+
+      - name: 4. Install NPM Packages
+        run: npm install
+
+      - name: 5. Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: 6. Run Wahab Engine
+        run: npm start
+        env:
+          SHEET_URL: ${{ secrets.SHEET_URL }}
+
+      - name: 7. Export Evidences
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wahab-results-${{ github.run_id }}
+          path: |
+            evidences/
+            *.txt
+            *.png
