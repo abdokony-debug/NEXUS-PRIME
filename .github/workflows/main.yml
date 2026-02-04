@@ -1,0 +1,36 @@
+name: Wahab Prime Execution
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  autonomous_mission:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Strategic Code Retrieval
+        uses: actions/checkout@v4
+
+      - name: 2. Initialize Neural Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 3. Deployment of Technical Arsenal
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: 4. Unleash Wahab Engine
+        run: node index.js
+        env:
+          SHEET_URL: "${{ secrets.SHEET_URL }}"
+
+      - name: 5. Secure Evidence Package
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wahab-Intelligence-Report
+          path: |
+            mission_log.txt
+            evidences/
