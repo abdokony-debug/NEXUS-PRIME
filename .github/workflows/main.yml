@@ -1,48 +1,17 @@
-name: Wahab Stealth v10.2
-on:
-  schedule:
-    - cron: '*/30 * * * *'
-  workflow_dispatch:
-
+name: WAHAB_FINAL
+on: [workflow_dispatch]
 jobs:
-  stealth:
-    runs-on: ubuntu-latest # التغيير لـ latest لضمان الاستقرار
-    timeout-minutes: 25
-    permissions:
-      contents: write
-      actions: write
+  run:
+    runs-on: ubuntu-latest
     steps:
-      - name: 1. Checkout
-        uses: actions/checkout@v4
-
-      - name: 2. Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
-
-      - name: 3. Install System Dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y libnss3 libatk-bridge2.0-0 libxss1 libasound2 libgbm1
-
-      - name: 4. Install NPM Packages
-        run: npm install
-
-      - name: 5. Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
-
-      - name: 6. Run Wahab Engine
-        run: npm start
-        env:
-          SHEET_URL: ${{ secrets.SHEET_URL }}
-
-      - name: 7. Export Evidences
-        if: always()
-        uses: actions/upload-artifact@v4
+      - run: npm install --no-package-lock
+      - run: npx playwright install --with-deps chromium
+      - run: node index.js
+      - uses: actions/upload-artifact@v4
         with:
-          name: wahab-results-${{ github.run_id }}
-          path: |
-            evidences/
-            *.txt
-            *.png
+          name: proof
+          path: evidences/
