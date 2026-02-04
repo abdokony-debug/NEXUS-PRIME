@@ -1,5 +1,25 @@
-run: |
-  curl -I https://www.google.com
-  npm config get registry
-  whoami
-  ls -la
+name: WAHAB_SYSTEM_AUDIT
+on: [push, workflow_dispatch]
+
+jobs:
+  diagnostic_test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: 1. Check Internet Connectivity (Access Control)
+        run: curl -I https://www.google.com
+
+      - name: 2. Check NPM Registry Access
+        run: |
+          npm config get registry
+          npm view playwright version
+
+      - name: 3. Check Account Permissions
+        run: |
+          echo "Current User: $(whoami)"
+          ls -la
+          
+      - name: 4. Attempt Package Download (The Real Test)
+        run: npm install playwright --no-package-lock
