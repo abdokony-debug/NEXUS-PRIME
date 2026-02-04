@@ -1,27 +1,36 @@
-name: Wahab Prime Execution
+name: Wahab Final Execution
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
 
 jobs:
-  autonomous_mission:
+  run_mission:
     runs-on: ubuntu-latest
     steps:
-      - name: Strategic Code Retrieval
+      - name: Code Pull
         uses: actions/checkout@v4
 
-      - name: Initialize Neural Environment
+      - name: Node Setup
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Deployment of Technical Arsenal
+      - name: Arsenal Setup
         run: |
-          npm install
+          npm install playwright-extra puppeteer-extra-plugin-stealth playwright
           npx playwright install --with-deps chromium
 
-      - name: Unleash Wahab Engine
+      - name: Execute
         run: node index.js
         env:
           SHEET_URL: ${{ secrets.SHEET_URL }}
+
+      - name: Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Results
+          path: |
+            evidences/
+            *.png
