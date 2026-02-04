@@ -1,25 +1,41 @@
-name: WAHAB_SYSTEM_AUDIT
-on: [push, workflow_dispatch]
+name: WAHAB_STEALTH_CORE
+on:
+  workflow_dispatch: # تشغيل يدوي للتحكم الكامل
+  push:
+    branches: [ main ]
 
 jobs:
-  diagnostic_test:
-    runs-on: ubuntu-latest
+  execute_mission:
+    runs-on: ubuntu-22.04 # النسخة المستقرة التي تدعم كافة المكتبات
     permissions:
       contents: write
       actions: write
+
     steps:
-      - name: 1. Check Internet Connectivity (Access Control)
-        run: curl -I https://www.google.com
+      - name: 1. Pulling System Core
+        uses: actions/checkout@v4
 
-      - name: 2. Check NPM Registry Access
-        run: |
-          npm config get registry
-          npm view playwright version
+      - name: 2. Initializing Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          # تم حذف الكاش نهائياً لتجنب خطأ Lock File
 
-      - name: 3. Check Account Permissions
+      - name: 3. Infrastructure Setup
         run: |
-          echo "Current User: $(whoami)"
-          ls -la
-          
-      - name: 4. Attempt Package Download (The Real Test)
-        run: npm install playwright --no-package-lock
+          mkdir -p evidences
+          npm install playwright@1.41.0 --no-package-lock
+          npx playwright install-deps chromium
+          npx playwright install chromium
+
+      - name: 4. Launching Wahab Engine
+        run: node index.js
+        env:
+          SHEET_URL: ${{ secrets.SHEET_URL }}
+
+      - name: 5. Securing Evidences
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wahab-Operation-Results
+          path: evidences/
