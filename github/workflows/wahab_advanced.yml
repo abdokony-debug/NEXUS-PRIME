@@ -1,0 +1,118 @@
+name: WAHAB_ADVANCED_SIMULATION
+on:
+  workflow_dispatch:
+    inputs:
+      identities:
+        description: 'Number of identities to generate'
+        required: true
+        default: '10'
+      referrals:
+        description: 'Number of referrals per identity'
+        required: true
+        default: '5'
+      mode:
+        description: 'Operation mode'
+        required: true
+        default: 'stealth'
+        type: choice
+        options:
+          - stealth
+          - fast
+          - test
+  schedule:
+    - cron: '0 */6 * * *'  # كل 6 ساعات
+    - cron: '0 3 * * *'    # يومياً 3 صباحاً
+
+jobs:
+  simulation_operation:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180  # 3 ساعات
+    
+    strategy:
+      matrix:
+        batch: [1, 2, 3]  # تشغيل متوازي لـ3 دفعات
+      max-parallel: 3
+      fail-fast: false
+
+    env:
+      NODE_ENV: production
+      SIMULATION_MODE: ${{ github.event.inputs.mode || 'stealth' }}
+      IDENTITIES_COUNT: ${{ github.event.inputs.identities || '10' }}
+      REFERRALS_PER_ID: ${{ github.event.inputs.referrals || '5' }}
+      ENABLE_PROXY_ROTATION: true
+      USE_TEMP_EMAILS: true
+      SOLVE_CAPTCHA: true
+      HUMAN_DELAY: true
+
+    steps:
+      - name: 🔄 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ⎔ Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 📦 Install Advanced Dependencies
+        run: |
+          npm ci --no-audit --prefer-offline
+          npx playwright install chromium firefox webkit --with-deps
+          pip3 install pyppeteer-stealth 2>/dev/null || true
+
+      - name: 🔧 Configure System
+        run: |
+          # Increase system limits for multiple browsers
+          sudo sysctl -w fs.file-max=100000
+          sudo sysctl -w kernel.pid_max=100000
+          ulimit -n 100000
+          
+          # Create necessary directories
+          mkdir -p databases evidences/{screenshots,logs,reports,data}
+          touch databases/identities.json databases/proxies.json
+
+      - name: 🚀 Launch Advanced Simulation
+        run: |
+          node src/index.js \
+            --mode ${{ env.SIMULATION_MODE }} \
+            --identities ${{ env.IDENTITIES_COUNT }} \
+            --referrals ${{ env.REFERRALS_PER_ID }} \
+            --batch ${{ matrix.batch }} \
+            --total-batches 3
+        env:
+          PROXY_API_KEY: ${{ secrets.PROXY_API_KEY }}
+          CAPTCHA_API_KEY: ${{ secrets.CAPTCHA_API_KEY }}
+          EMAIL_API_KEY: ${{ secrets.EMAIL_API_KEY }}
+          DATABASE_ENCRYPTION_KEY: ${{ secrets.DB_ENCRYPTION_KEY }}
+
+      - name: 📊 Generate Live Report
+        if: always()
+        run: node src/report-generator.js --format html --output evidences/reports/live_report_${{ github.run_id }}.html
+
+      - name: 📁 Archive All Evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulation-evidence-batch-${{ matrix.batch }}-${{ github.run_id }}
+          path: |
+            evidences/**/*
+            databases/*.json
+            databases/*.db
+          retention-days: 30
+          compression-level: 9
+
+      - name: 📈 Upload Metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-metrics-${{ github.run_id }}
+          path: evidences/metrics/
+          retention-days: 90
+
+      - name: 🧹 Cleanup & Secure
+        if: always()
+        run: |
+          # Secure cleanup of sensitive data
+          find evidences/ -name "*.json" -type f -exec shred -u {} \;
+          rm -rf node_modules/.cache
+          sync
