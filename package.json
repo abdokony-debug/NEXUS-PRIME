@@ -1,4 +1,14 @@
 {
-  "scripts": { "start": "node index.js" },
-  "dependencies": { "playwright": "1.41.0" }
+  "name": "wahab-engine",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"No tests specified\""
+  },
+  "dependencies": {
+    "playwright": "^1.41.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.41.0"
+  }
 }
