@@ -1,47 +1,28 @@
-async getReferralPlatforms() {
+async updatePlatformStatus(platform, status, notes = '') {
   try {
-    if (!this.initialized) {
-      await this.initialize();
-    }
-    
     const schema = require('../config/referral-sites-schema');
     const sheetName = schema.sheetName;
     
-    // جلب البيانات من الورقة
     const sheet = this.doc.sheetsByTitle[sheetName];
-    if (!sheet) {
-      throw new Error(`Sheet "${sheetName}" not found`);
+    if (!sheet) return false;
+    
+    // تحديث خلية الحالة
+    const statusCell = sheet.getCell(platform.rowNumber - 1, schema.columns.status);
+    statusCell.value = status;
+    
+    // إضافة ملاحظات في عمود إضافي إذا لزم الأمر
+    if (notes && schema.columns.notes !== undefined) {
+      const notesCell = sheet.getCell(platform.rowNumber - 1, schema.columns.notes);
+      notesCell.value = notes;
     }
     
-    // تحميل الخلايا في النطاق المحدد
-    await sheet.loadCells(schema.dataRange);
+    await sheet.saveUpdatedCells();
+    logger.info(`Updated ${platform.platform} status to ${status}`);
     
-    const platforms = [];
-    const [startRow, endRow] = this.parseRange(schema.dataRange);
-    
-    for (let row = startRow; row <= endRow; row++) {
-      const platformCell = sheet.getCell(row, schema.columns.platform);
-      const linkCell = sheet.getCell(row, schema.columns.link);
-      const countCell = sheet.getCell(row, schema.columns.count);
-      const statusCell = sheet.getCell(row, schema.columns.status);
-      
-      // التوقف إذا كان اسم المنصة فارغاً
-      if (!platformCell.value) break;
-      
-      platforms.push({
-        platform: platformCell.value,
-        link: linkCell.value,
-        count: parseInt(countCell.value) || 0,
-        status: statusCell.value || 'Pending',
-        rowNumber: row + 1 // +1 لأن الصفوف تبدأ من 1 في Google Sheets
-      });
-    }
-    
-    logger.info(`📊 Loaded ${platforms.length} referral platforms from sheet`);
-    return platforms;
+    return true;
     
   } catch (error) {
-    logger.error('Error loading referral platforms', error);
-    return [];
+    logger.error(`Failed to update status for ${platform.platform}`, error);
+    return false;
   }
 }
