@@ -1,36 +1,24 @@
-name: Wahab Final Execution
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+name: Wahab-Sovereign-System
+on: [push, workflow_dispatch]
 
 jobs:
-  run_mission:
+  build-and-run:
     runs-on: ubuntu-latest
     steps:
-      - name: Code Pull
+      - name: 1. Pulling Code
         uses: actions/checkout@v4
 
-      - name: Node Setup
+      - name: 2. Initializing Environment
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Arsenal Setup
+      - name: 3. Installing Dependencies & OS Libraries
         run: |
-          npm install playwright-extra puppeteer-extra-plugin-stealth playwright
+          npm init -y
+          npm install playwright playwright-extra puppeteer-extra-plugin-stealth
+          # هذه هي الخطوة المفقودة: تثبيت مكتبات النظام الضرورية لعمل المتصفح في الخلفية
           npx playwright install --with-deps chromium
 
-      - name: Execute
+      - name: 4. Launching Wahab Engine
         run: node index.js
-        env:
-          SHEET_URL: ${{ secrets.SHEET_URL }}
-
-      - name: Report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Results
-          path: |
-            evidences/
-            *.png
