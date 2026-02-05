@@ -1,4 +1,23 @@
 {
+  "name": "wahab-automation-system",
+  "version": "2.0.0",
+  "description": "نظام أتمتة متكامل للمنصات باستخدام Google Sheets",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "setup": "node src/setup.js",
+    "test": "node src/test-connection.js",
+    "quick-run": "node src/quick-test.js"
+  },
+  "dependencies": {
+    "playwright": "^1.41.0",
+    "google-spreadsheet": "^4.1.1",
+    "google-auth-library": "^9.0.0",
+    "dotenv": "^16.3.0",
+    "axios": "^1.6.2",
+    "chalk": "^4.1.2",
+    "ora": "^6.3.1"
+  }
   "scripts": {
     "start": "node index.js",
     "install-browser": "npx playwright install chromium"
