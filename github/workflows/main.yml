@@ -1,0 +1,27 @@
+name: 🚀 تشغيل نظام الإحالة
+on: workflow_dispatch
+jobs:
+  run-system:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 تحميل الكود
+        uses: actions/checkout@v4
+      
+      - name: ⚙️ إعداد Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: 📦 تثبيت المكتبات
+        run: npm install
+      
+      - name: 🚀 معالجة منصات الإحالة
+        run: |
+          node src/index.js --mode platforms --batch-size 5
+        env:
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+          GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+      
+      - name: ✅ التأكيد
+        run: echo "✅ تم التشغيل بنجاح"
