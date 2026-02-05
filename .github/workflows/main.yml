@@ -1,77 +1,55 @@
-name: 🚀 Run WAHAB System
+name: Run WAHAB System
 on: workflow_dispatch
 
 jobs:
-  run-system:
+  execute:
     runs-on: ubuntu-latest
     
     steps:
-      # Step 1: Checkout code
-      - name: 📥 Checkout code
+      # Step 1: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
       
-      # Step 2: Setup Node.js
-      - name: ⚙️ Setup Node.js
+      # Step 2: Setup Node.js environment
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: 'npm'
       
       # Step 3: Install dependencies
-      - name: 📦 Install dependencies
+      - name: Install dependencies
         run: |
-          echo "Installing dependencies..."
-          npm ci
-          echo "✅ Dependencies installed"
+          echo "Installing Node.js packages..."
+          npm install --no-audit --no-fund
+          echo "Installation completed"
       
-      # Step 4: Debug project structure
-      - name: 🔍 Debug project structure
+      # Step 4: Verify project structure
+      - name: Verify project files
         run: |
-          echo "=== Project Structure ==="
-          echo "Files in root:"
-          ls -la
-          echo "=== Checking src/ ==="
-          if [ -d "src" ]; then
-            ls -la src/
-          else
-            echo "❌ src directory not found"
+          echo "Verifying project structure..."
+          if [ ! -f "src/index.js" ]; then
+            echo "ERROR: src/index.js not found!"
+            exit 1
           fi
+          echo "Project structure is valid"
       
-      # Step 5: Run system with error handling
-      - name: 🚀 Run WAHAB System
-        id: run-system
+      # Step 5: Execute system
+      - name: Execute system
         run: |
-          echo "=== Starting WAHAB System ==="
+          echo "Executing WAHAB System..."
           echo "Mode: platforms"
           echo "Batch size: 5"
           
-          # Run the system with detailed error reporting
-          set -e  # Exit immediately on error
-          
-          # Try to run the system
-          if [ -f "src/index.js" ]; then
-            echo "Running: node src/index.js --mode platforms --batch-size 5"
-            node src/index.js --mode platforms --batch-size 5 2>&1 || {
-              echo "❌ System failed with exit code: $?"
-              exit 1
-            }
-          else
-            echo "❌ src/index.js not found"
-            exit 1
-          fi
-          
-          echo "✅ System completed successfully"
+          node src/index.js --mode platforms --batch-size 5
         env:
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
           GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
           GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
           NODE_ENV: production
       
-      # Step 6: Success notification
-      - name: ✅ Success notification
+      # Step 6: Success handler
+      - name: Success handler
         if: success()
         run: |
-          echo "🎉 WAHAB System ran successfully!"
-          echo "Time: $(date)"
+          echo "Execution completed successfully"
           echo "Run ID: ${{ github.run_id }}"
-          echo "View logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
