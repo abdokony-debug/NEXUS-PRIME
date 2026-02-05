@@ -1,293 +1,117 @@
-#!/usr/bin/env node
-
-const { program } = require('yargs');
+require('dotenv').config();
+const fs = require('fs');
+const { chromium } = require('playwright');
 const chalk = require('chalk');
-const ora = require('ora');
-const moment = require('moment');
-const fs = require('fs-extra');
-const path = require('path');
 
-// استيراد الموديولات المتقدمة
-const IdentityManager = require('./identity-manager');
-const ProxyRotator = require('./proxy-rotator');
-const BrowserSimulator = require('./browser-simulator');
-const ReferralProcessor = require('./referral-processor');
-const AcademicAutomator = require('./academic-automator');
-const StealthEngine = require('./stealth-engine');
-const ReportGenerator = require('./report-generator');
-const DatabaseManager = require('./database-manager');
+console.log(chalk.green.bold('🚀 نظام WAHAB يعمل الآن!'));
+console.log(chalk.cyan('==============================\n'));
 
-// تكوين CLI متقدم
-program
-  .option('-m, --mode <type>', 'Simulation mode', 'stealth')
-  .option('-i, --identities <number>', 'Number of identities', 10)
-  .option('-r, --referrals <number>', 'Referrals per identity', 5)
-  .option('-b, --batch <number>', 'Batch number', 1)
-  .option('-tb, --total-batches <number>', 'Total batches', 1)
-  .option('-u, --universities <file>', 'Universities JSON file')
-  .option('-p, --proxies <file>', 'Proxies JSON file')
-  .option('-d, --delay <seconds>', 'Delay between actions', 3)
-  .parse(process.argv);
-
-const options = program.opts();
-
-class AdvancedSimulationSystem {
-  constructor(config) {
-    this.config = config;
-    this.identities = [];
-    this.results = [];
-    this.stats = {
-      startTime: null,
-      endTime: null,
-      totalIdentities: 0,
-      successfulReferrals: 0,
-      failedReferrals: 0,
-      completedUniversities: 0
-    };
-    this.logger = this.setupLogger();
-  }
-
-  setupLogger() {
-    const logDir = path.join(__dirname, '../evidences/logs');
-    fs.ensureDirSync(logDir);
-    
-    const logFile = path.join(logDir, `simulation_${moment().format('YYYYMMDD_HHmmss')}.log`);
-    
-    return {
-      info: (msg) => {
-        const timestamp = moment().format('YYYY-MM-DD HH:mm:ss');
-        const message = `[${timestamp}] [INFO] ${msg}`;
-        console.log(chalk.blue(message));
-        fs.appendFileSync(logFile, message + '\n');
-      },
-      success: (msg) => {
-        const timestamp = moment().format('YYYY-MM-DD HH:mm:ss');
-        const message = `[${timestamp}] [SUCCESS] ${msg}`;
-        console.log(chalk.green(message));
-        fs.appendFileSync(logFile, message + '\n');
-      },
-      error: (msg, err) => {
-        const timestamp = moment().format('YYYY-MM-DD HH:mm:ss');
-        const message = `[${timestamp}] [ERROR] ${msg}: ${err?.message || err}`;
-        console.error(chalk.red(message));
-        fs.appendFileSync(logFile, message + '\n');
-      },
-      warning: (msg) => {
-        const timestamp = moment().format('YYYY-MM-DD HH:mm:ss');
-        const message = `[${timestamp}] [WARNING] ${msg}`;
-        console.warn(chalk.yellow(message));
-        fs.appendFileSync(logFile, message + '\n');
-      }
-    };
-  }
-
-  async initialize() {
-    this.stats.startTime = moment();
-    this.logger.info('🚀 Initializing Advanced Simulation System');
-    
-    // تهيئة جميع المكونات
-    await this.initializeComponents();
-    
-    this.logger.success('✅ System initialized successfully');
-  }
-
-  async initializeComponents() {
-    const components = [
-      { name: 'Database', instance: new DatabaseManager() },
-      { name: 'Proxy Rotator', instance: new ProxyRotator() },
-      { name: 'Identity Manager', instance: new IdentityManager() },
-      { name: 'Stealth Engine', instance: new StealthEngine() },
-      { name: 'Browser Simulator', instance: new BrowserSimulator() }
-    ];
-
-    for (const component of components) {
-      try {
-        await component.instance.initialize();
-        this.logger.success(`✅ ${component.name} initialized`);
-      } catch (error) {
-        this.logger.error(`Failed to initialize ${component.name}`, error);
-        throw error;
-      }
+async function main() {
+    // التحقق من الإعدادات
+    if (!process.env.GOOGLE_SHEET_URL) {
+        console.log(chalk.red('❌ لم يتم تعيين رابط Google Sheet'));
+        console.log(chalk.yellow('🔧 أضف إلى ملف .env:'));
+        console.log(chalk.white('GOOGLE_SHEET_URL=رابط_الشيت_هنا'));
+        return;
     }
-  }
 
-  async generateIdentities() {
-    this.logger.info(`🔄 Generating ${this.config.identities} identities...`);
-    
-    const identityManager = new IdentityManager();
-    this.identities = await identityManager.generateBatch({
-      count: this.config.identities,
-      country: 'US',
-      ageRange: [18, 35],
-      includeTempEmail: true,
-      includeAcademicInfo: true
+    console.log(chalk.blue('📄 رابط الشيت:'), process.env.GOOGLE_SHEET_URL);
+
+    // 1. تشغيل المتصفح
+    console.log(chalk.yellow('\n🌐 تشغيل المتصفح...'));
+    const browser = await chromium.launch({ 
+        headless: false, // يمكن تغييره لـ true
+        slowMo: 100 // إبطاء للرؤية
     });
-
-    this.logger.success(`✅ Generated ${this.identities.length} identities`);
-    return this.identities;
-  }
-
-  async processIdentity(identity, index) {
-    this.logger.info(`👤 Processing identity ${index + 1}/${this.identities.length}: ${identity.email}`);
     
-    const result = {
-      identityId: identity.id,
-      email: identity.email,
-      proxyUsed: null,
-      referrals: [],
-      universities: [],
-      startTime: moment(),
-      endTime: null,
-      status: 'processing'
-    };
-
-    try {
-      // 1. الحصول على بروكسي فريد
-      const proxyRotator = new ProxyRotator();
-      const proxy = await proxyRotator.getProxy();
-      result.proxyUsed = proxy;
-
-      // 2. تكوين محاكي المتصفح مع بصمة فريدة
-      const browserSimulator = new BrowserSimulator();
-      const browser = await browserSimulator.launch({
-        proxy: proxy,
-        fingerprint: identity.fingerprint,
-        stealthLevel: this.config.mode === 'stealth' ? 'high' : 'medium'
-      });
-
-      // 3. تنفيذ عمليات التسجيل الجامعي
-      const academicAutomator = new AcademicAutomator();
-      const universityResults = await academicAutomator.processIdentity({
-        identity: identity,
-        browser: browser,
-        maxUniversities: 3
-      });
-
-      result.universities = universityResults;
-
-      // 4. تنفيذ عمليات الإحالة
-      const referralProcessor = new ReferralProcessor();
-      const referralResults = await referralProcessor.processReferrals({
-        identity: identity,
-        browser: browser,
-        count: this.config.referrals,
-        delay: this.config.delay * 1000
-      });
-
-      result.referrals = referralResults;
-
-      // 5. تحديث الإحصائيات
-      result.status = 'completed';
-      result.successCount = referralResults.filter(r => r.success).length;
-      result.failCount = referralResults.filter(r => !r.success).length;
-
-      this.stats.successfulReferrals += result.successCount;
-      this.stats.failedReferrals += result.failCount;
-
-      // 6. إغلاق المتصرف بأمان
-      await browser.close();
-
-      this.logger.success(`✅ Identity ${identity.email} completed: ${result.successCount} successful, ${result.failCount} failed`);
-
-    } catch (error) {
-      result.status = 'failed';
-      result.error = error.message;
-      this.logger.error(`❌ Identity ${identity.email} failed`, error);
-    } finally {
-      result.endTime = moment();
-      return result;
-    }
-  }
-
-  async run() {
-    const spinner = ora('Starting advanced simulation...').start();
+    const context = await browser.newContext({
+        viewport: { width: 1280, height: 720 },
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    });
     
-    try {
-      // الخطوة 1: التهيئة
-      spinner.text = 'Initializing system components...';
-      await this.initialize();
-
-      // الخطوة 2: توليد الهويات
-      spinner.text = 'Generating unique identities...';
-      await this.generateIdentities();
-
-      // الخطوة 3: معالجة كل هوية
-      for (let i = 0; i < this.identities.length; i++) {
-        const identity = this.identities[i];
-        spinner.text = `Processing identity ${i + 1}/${this.identities.length}...`;
-        
-        const result = await this.processIdentity(identity, i);
-        this.results.push(result);
-
-        // تأخير طبيعي بين الهويات
-        if (i < this.identities.length - 1) {
-          const delay = Math.floor(Math.random() * 10000) + 5000; // 5-15 ثانية
-          await new Promise(resolve => setTimeout(resolve, delay));
+    const page = await context.newPage();
+    
+    // 2. قراءة المنصات (يمكن تغييرها لقراءة من Google Sheets)
+    const platforms = [
+        {
+            name: 'prizes gamee',
+            url: 'https://prizes.gamee.com/get/dwf5azgy',
+            count: 5
+        },
+        {
+            name: 'freecash',
+            url: 'https://freecash.com/r/C33IV',
+            count: 5
+        },
+        {
+            name: 'pawns.app',
+            url: 'https://pawns.app/?r=18733307',
+            count: 5
         }
-      }
-
-      // الخطوة 4: توليد التقارير
-      spinner.text = 'Generating comprehensive reports...';
-      await this.generateReports();
-
-      // الخطوة 5: إظهار النتائج النهائية
-      spinner.succeed('Simulation completed successfully!');
-      this.displayFinalStats();
-
-    } catch (error) {
-      spinner.fail('Simulation failed!');
-      this.logger.error('Fatal error in simulation', error);
-      process.exit(1);
+    ];
+    
+    console.log(chalk.green(`✅ تم تحميل ${platforms.length} منصة`));
+    
+    // 3. معالجة كل منصة
+    for (let i = 0; i < platforms.length; i++) {
+        const platform = platforms[i];
+        
+        console.log(chalk.cyan(`\n🎯 المنصة ${i + 1}/${platforms.length}: ${platform.name}`));
+        console.log(chalk.white(`🔗 الرابط: ${platform.url}`));
+        
+        try {
+            // زيارة الموقع
+            await page.goto(platform.url, { waitUntil: 'domcontentloaded' });
+            
+            // انتظار تحميل الصفحة
+            await page.waitForTimeout(2000);
+            
+            // التقاط لقطة شاشة
+            await page.screenshot({ 
+                path: `screenshots/${platform.name.replace(/\s+/g, '_')}_${Date.now()}.png`,
+                fullPage: true 
+            });
+            
+            // محاكاة التفاعل البشري
+            await humanLikeInteraction(page);
+            
+            console.log(chalk.green(`✅ تمت زيارة ${platform.name} بنجاح`));
+            
+            // تأخير بين المواقع
+            if (i < platforms.length - 1) {
+                const delay = Math.floor(Math.random() * 5000) + 3000;
+                console.log(chalk.gray(`⏳ انتظار ${delay/1000} ثواني...`));
+                await page.waitForTimeout(delay);
+            }
+            
+        } catch (error) {
+            console.log(chalk.red(`❌ خطأ في ${platform.name}: ${error.message}`));
+        }
     }
-  }
-
-  async generateReports() {
-    const reportGenerator = new ReportGenerator();
     
-    // توليد أنواع مختلفة من التقارير
-    await reportGenerator.generate({
-      type: 'detailed',
-      data: this.results,
-      output: path.join(__dirname, '../evidences/reports/detailed_report.json')
-    });
-
-    await reportGenerator.generate({
-      type: 'summary',
-      data: this.results,
-      output: path.join(__dirname, '../evidences/reports/summary_report.html')
-    });
-
-    await reportGenerator.generate({
-      type: 'analytics',
-      data: this.results,
-      output: path.join(__dirname, '../evidences/reports/analytics.json')
-    });
-
-    this.logger.success('📊 All reports generated successfully');
-  }
-
-  displayFinalStats() {
-    const duration = moment.duration(moment().diff(this.stats.startTime));
-    
-    console.log(chalk.yellow('\n📈 ======= SIMULATION RESULTS =======\n'));
-    console.log(chalk.cyan(`   Total Identities: ${this.identities.length}`));
-    console.log(chalk.cyan(`   Total Referrals: ${this.stats.successfulReferrals + this.stats.failedReferrals}`));
-    console.log(chalk.green(`   Successful: ${this.stats.successfulReferrals}`));
-    console.log(chalk.red(`   Failed: ${this.stats.failedReferrals}`));
-    console.log(chalk.cyan(`   Success Rate: ${((this.stats.successfulReferrals / (this.stats.successfulReferrals + this.stats.failedReferrals)) * 100).toFixed(2)}%`));
-    console.log(chalk.cyan(`   Duration: ${duration.hours()}h ${duration.minutes()}m ${duration.seconds()}s`));
-    console.log(chalk.cyan(`   Average Time per Identity: ${(duration.asMinutes() / this.identities.length).toFixed(2)} minutes`));
-    console.log(chalk.yellow('\n====================================\n'));
-  }
+    // 4. إنهاء الجلسة
+    console.log(chalk.green('\n✅ اكتملت جميع المهام!'));
+    await browser.close();
 }
 
-// التنفيذ الرئيسي
-(async () => {
-  try {
-    const simulation = new AdvancedSimulationSystem(options);
-    await simulation.run();
-  } catch (error) {
-    console.error(chalk.red('Fatal error:'), error);
+// محاكاة سلوك بشري
+async function humanLikeInteraction(page) {
+    // حركة عشوائية للماوس
+    await page.mouse.move(
+        Math.random() * 800,
+        Math.random() * 600,
+        { steps: 10 }
+    );
+    
+    // تمرير عشوائي
+    await page.mouse.wheel(0, Math.random() * 200 + 100);
+    
+    // تأخيرات عشوائية
+    await page.waitForTimeout(Math.random() * 1000 + 500);
+}
+
+// تشغيل النظام
+main().catch(error => {
+    console.error(chalk.red('💥 خطأ غير متوقع:'), error);
     process.exit(1);
-  }
-})();
+});
