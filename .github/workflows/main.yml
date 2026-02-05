@@ -1,21 +1,5 @@
-name: 🚀 تشغيل WAHAB System
-on:
-  workflow_dispatch:
-    inputs:
-      mode:
-        description: 'نوع التشغيل'
-        required: true
-        default: 'platforms'
-        type: choice
-        options:
-          - platforms
-          - users
-          - test
-      batch_size:
-        description: 'حجم الدفعة'
-        required: true
-        default: '5'
-        type: string
+name: 🚀 تشغيل WAHAB-System
+on: workflow_dispatch
 
 jobs:
   run-system:
@@ -23,25 +7,34 @@ jobs:
     steps:
       - name: 📥 تحميل الكود
         uses: actions/checkout@v4
-      
+
       - name: ⚙️ إعداد Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-      
+          node-version: '18'
+
       - name: 📦 تثبيت المكتبات
-        run: npm install
-      
+        run: |
+          echo "جاري فحص package.json..."
+          if [ -f "package.json" ]; then
+            echo "ملف package.json موجود. جاري التحقق من صحته..."
+            node -e "JSON.parse(require('fs').readFileSync('package.json', 'utf8'))" && echo "JSON صالح."
+          else
+            echo "ملف package.json غير موجود."
+            exit 1
+          fi
+          echo "جاري تثبيت الاعتماديات..."
+          npm install
+
       - name: 🚀 تشغيل النظام
         run: |
           echo "بدء تشغيل النظام..."
-          node src/index.js \
-            --mode "${{ github.event.inputs.mode || 'platforms' }}" \
-            --batch-size "${{ github.event.inputs.batch_size || '5' }}"
+          node src/index.js --mode platforms --batch-size 5
         env:
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
           GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
           GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
-      
+
       - name: ✅ التأكيد
+        if: success()
         run: echo "✅ تم التشغيل بنجاح"
