@@ -1,19 +1,48 @@
-name: WAHAB System Runner
-on: workflow_dispatch
+name: WAHAB Referral System
+on:
+  workflow_dispatch:
+    inputs:
+      batch_size:
+        description: 'Number of platforms to process'
+        required: true
+        default: '5'
 
 jobs:
-  run:
+  process-referrals:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
-      - run: npm install axios googleapis playwright
-      - run: npx playwright install chromium
-      - run: node src/index.js --mode platforms --batch-size 5
+      
+      - name: Install dependencies
+        run: |
+          npm ci
+          npx playwright install chromium
+      
+      - name: Run Referral System
+        run: |
+          echo "Starting Referral Platform Processing..."
+          echo "Batch size: ${{ github.event.inputs.batch_size }}"
+          
+          node src/index.js --mode platforms --batch-size ${{ github.event.inputs.batch_size }}
         env:
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
           GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
           GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
-      - run: echo "✅ Process completed"
+          NODE_ENV: production
+      
+      - name: Upload Processing Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: processing-report-$(date +%Y%m%d-%H%M%S)
+          path: |
+            *.log
+          retention-days: 7
