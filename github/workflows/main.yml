@@ -1,9 +1,23 @@
-name: Test Workflow
-on: [workflow_dispatch]
+name: 🚀 تشغيل النظام
+on: workflow_dispatch
 
 jobs:
-  test:
+  run:
     runs-on: ubuntu-latest
     steps:
-      - name: Say Hello
-        run: echo "✅ Workflow is working!"
+      - name: 📥 تحميل الكود
+        uses: actions/checkout@v4
+        
+      - name: ⚙️ إعداد Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: 🚀 تشغيل النظام
+        run: |
+          echo "بدء تشغيل النظام..."
+          # أضف أوامر تشغيل نظامك هنا
+          # مثال: node src/index.js
+          
+      - name: ✅ النجاح
+        run: echo "✅ تم التشغيل بنجاح"
