@@ -1,55 +1,30 @@
-name: Run WAHAB System
+name: WAHAB System Runner
 on: workflow_dispatch
 
 jobs:
-  execute:
+  run:
     runs-on: ubuntu-latest
-    
     steps:
-      # Step 1: Checkout repository
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       
-      # Step 2: Setup Node.js environment
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '18'
       
-      # Step 3: Install dependencies
-      - name: Install dependencies
+      - name: Create package-lock.json if missing
         run: |
-          echo "Installing Node.js packages..."
-          npm install --no-audit --no-fund
-          echo "Installation completed"
-      
-      # Step 4: Verify project structure
-      - name: Verify project files
-        run: |
-          echo "Verifying project structure..."
-          if [ ! -f "src/index.js" ]; then
-            echo "ERROR: src/index.js not found!"
-            exit 1
+          if [ ! -f "package-lock.json" ]; then
+            echo "Creating package-lock.json..."
+            npm install --package-lock-only
           fi
-          echo "Project structure is valid"
       
-      # Step 5: Execute system
-      - name: Execute system
-        run: |
-          echo "Executing WAHAB System..."
-          echo "Mode: platforms"
-          echo "Batch size: 5"
-          
-          node src/index.js --mode platforms --batch-size 5
+      - run: npm ci
+      
+      - name: Run System
+        run: node src/index.js --mode platforms --batch-size 5
         env:
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
           GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
           GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
-          NODE_ENV: production
       
-      # Step 6: Success handler
-      - name: Success handler
-        if: success()
-        run: |
-          echo "Execution completed successfully"
-          echo "Run ID: ${{ github.run_id }}"
+      - run: echo "Process completed"
