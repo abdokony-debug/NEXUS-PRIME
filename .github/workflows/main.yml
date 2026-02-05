@@ -4,6 +4,8 @@ on: workflow_dispatch
 jobs:
   run:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -13,12 +15,56 @@ jobs:
         with:
           node-version: '18'
       
-      - name: Install packages
-        run: npm install
+      - name: Install dependencies
+        run: |
+          echo "Installing required packages..."
+          npm install axios@^1.6.0 googleapis@^128.0.0 playwright@^1.40.0 dotenv@^16.3.1
+          echo "Packages installed successfully"
+      
+      - name: Install Playwright with dependencies
+        run: |
+          echo "Installing Playwright browsers..."
+          npx playwright install --with-deps chromium
+          echo "Playwright installation completed"
+      
+      - name: Verify installations
+        run: |
+          echo "Verifying installed packages..."
+          node -e "
+            try {
+              require('axios');
+              console.log('✅ axios is available');
+            } catch(e) { console.log('❌ axios:', e.message); }
+            
+            try {
+              require('googleapis');
+              console.log('✅ googleapis is available');
+            } catch(e) { console.log('❌ googleapis:', e.message); }
+            
+            try {
+              require('playwright');
+              console.log('✅ playwright is available');
+            } catch(e) { console.log('❌ playwright:', e.message); }
+          "
       
       - name: Execute system
-        run: node src/index.js --mode platforms --batch-size 5
+        run: |
+          echo "Starting WAHAB System..."
+          echo "Mode: platforms"
+          echo "Batch size: 5"
+          echo "Node version: $(node --version)"
+          
+          # Run the system
+          node src/index.js --mode platforms --batch-size 5
+          
+          echo "✅ System execution completed"
         env:
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
           GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
           GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+          NODE_ENV: production
+          PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
+      
+      - name: Success notification
+        if: success()
+        run: echo "🎉 WAHAB System ran successfully!"
