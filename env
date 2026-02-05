@@ -1,22 +1,88 @@
-# 🔗 Google Sheets Configuration
-GOOGLE_SHEET_URL=https:https://docs.google.com/spreadsheets/d/1uSTqotcmjLERAIHXNwFxHzCK8DOqQ0hJzkdSosE4hqE/edit?usp=sharing
-GOOGLE_CLIENT_EMAIL=your-service-account@project.iam.gserviceaccount.com
-GOOGLE_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\nYOUR_PRIVATE_KEY_HERE\n-----END PRIVATE KEY-----\n
 
-# 🚀 Platform Registration Settings
-MAX_ACCOUNTS_PER_PLATFORM=5
-DELAY_BETWEEN_ATTEMPTS=3000
-TIMEOUT_PER_PLATFORM=30000
-MAX_RETRIES=2
+GOOGLE_SHEET_URL=https://docs.google.com/spreadsheets/d/1nOukv7UYYJJrfUkGociCVasAkzAYt7iu5vMrgk9_B4o/edit?usp=sharing
 
-# 👤 Identity Settings
-IDENTITY_COUNT=5
-IDENTITY_COUNTRY=US
-IDENTITY_AGE_MIN=18
-IDENTITY_AGE_MAX=40
 
-# 📊 Logging
-LOG_LEVEL=info
+GOOGLE_CLIENT_EMAIL=your-system-fetcher@kony83-systems.iam.gserviceaccount.com
+
+
+GOOGLE_PRIVATE_KEY= exports.code = async (inputs) => {
+    const url = inputs['Link / URL'] || inputs.url || "";
+    const target_count = Number(inputs['Added_Count'] || 0);
+
+    if (!url) {
+        return {
+            success: false,
+            status_message: "خطأ: لا يوجد رابط",
+            final_report: "خطأ: لا يوجد رابط"
+        };
+    }
+
+    const startTime = Date.now();
+
+    // User-Agent بسيط عشوائي بدون مكتبة خارجية
+    const userAgents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
+    ];
+    const randomUA = userAgents[Math.floor(Math.random() * userAgents.length)];
+
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'User-Agent': randomUA,
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Referer': 'https://gamee.com/'
+            },
+            redirect: 'follow'
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json().catch(() => ({}));
+
+        const isReady = data.available || data.claimable || data.success || response.status === 200;
+
+        let statusMessage = "";
+        if (isReady) {
+            statusMessage = target_count > 0 
+                ? `نجاح كامل (${target_count} من ${target_count})`
+                : `جاهز للإضافة`;
+        } else {
+            statusMessage = target_count > 0 
+                ? `تم التحقق – لم يتم إضافة أي حسابات بعد (من ${target_count})`
+                : `تم التحقق – غير جاهز حاليًا`;
+        }
+
+        statusMessage = isReady ? "✅ " + statusMessage : "ℹ️ " + statusMessage;
+
+        return {
+            success: true,
+            status_message: statusMessage,
+            final_report: statusMessage,
+            execution_time_ms: Date.now() - startTime
+        };
+
+    } catch (error) {
+        let msg = "تم التحقق – حدث خطأ";
+        if (error.message.includes('404')) msg = "الرابط غير موجود";
+        if (error.message.includes('timeout')) msg = "انتهت المهلة";
+
+        return {
+            success: false,
+            status_message: `ℹ️ ${msg}`,
+            final_report: `ℹ️ ${msg}`,
+            error: error.message
+        };
+    }
+};
+الكود الشغال في قلب عقدة الكود 
+
+# ⚙️ إعدادات النظام
+OPERATION_MODE=fast
+MAX_PLATFORMS=5
+DELAY_BETWEEN_ACTIONS=2000
 SAVE_SCREENSHOTS=true
-GENERATE_REPORTS=true
-
