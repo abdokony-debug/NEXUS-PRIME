@@ -1,52 +1,24 @@
 {
-  "name": "wahab-advanced-stealth",
-  "version": "2.0.0",
-  "description": "Advanced human-like simulation system for academic referrals",
-  "main": "src/index.js",
+  "name": "wahab-platform-registrar",
+  "version": "1.0.0",
+  "description": "Automated platform registration system using Google Sheets",
+  "main": "src/index-custom.js",
   "scripts": {
-    "start": "node src/index.js",
-    "generate": "node src/identity-manager.js --generate 100",
-    "test-proxies": "node src/proxy-rotator.js --test",
-    "monitor": "node src/report-generator.js --live",
-    "clean": "rm -rf evidences/* && rm -rf databases/temp_*",
-    "backup": "tar -czf backup_$(date +%Y%m%d).tar.gz databases/ evidences/"
+    "start": "node src/index-custom.js",
+    "start:dev": "nodemon src/index-custom.js",
+    "test-platforms": "node src/index-custom.js --test",
+    "generate-report": "node scripts/generate-report.js",
+    "update-sheet": "node scripts/update-sheet.js",
+    "monitor": "node scripts/monitor.js --live"
   },
   "dependencies": {
     "playwright": "^1.41.0",
-    "puppeteer-extra": "^3.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2",
-    "fingerprint-generator": "^1.3.1",
-    "fingerprint-injector": "^1.1.1",
-    "user-agents": "^1.0.559",
-    "fake-identity": "^2.1.0",
-    "tempmail.lol": "^1.0.2",
-    "mailboxlayer": "^1.0.0",
-    "proxy-chain": "^2.4.1",
-    "rotating-proxy": "^1.0.0",
-    "node-fetch": "^3.3.2",
-    "cheerio": "^1.0.0-rc.12",
-    "sqlite3": "^5.1.6",
-    "jsonwebtoken": "^9.0.2",
-    "crypto-js": "^4.2.0",
-    "bcryptjs": "^2.4.3",
-    "lodash": "^4.17.21",
-    "moment": "^2.29.4",
+    "google-spreadsheet": "^4.1.1",
+    "google-auth-library": "^9.0.0",
+    "fs-extra": "^11.2.0",
+    "dotenv": "^16.3.0",
     "chalk": "^4.1.2",
     "ora": "^6.3.1",
-    "progress": "^2.0.3",
-    "yargs": "^17.7.2",
-    "dotenv": "^16.3.0",
-    "fs-extra": "^11.2.0",
-    "axios": "^1.6.2",
-    "ws": "^8.14.2",
-    "uuid": "^9.0.1"
-  },
-  "devDependencies": {
-    "@playwright/test": "^1.41.0",
-    "eslint": "^8.56.0",
-    "nodemon": "^3.0.2"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "moment": "^2.29.4"
   }
 }
