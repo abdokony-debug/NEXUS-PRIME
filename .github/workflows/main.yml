@@ -1,7 +1,0 @@
-- name: 🚀 Process Referral Platforms
-  run: |
-    node src/index.js --mode platforms --batch-size 5
-  env:
-    GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
-    GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
-    GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
