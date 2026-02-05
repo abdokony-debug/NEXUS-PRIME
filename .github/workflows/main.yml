@@ -1,41 +1,7 @@
-name: WAHAB_STEALTH_CORE
-on:
-  workflow_dispatch: # تشغيل يدوي للتحكم الكامل
-  push:
-    branches: [ main ]
-
-jobs:
-  execute_mission:
-    runs-on: ubuntu-22.04 # النسخة المستقرة التي تدعم كافة المكتبات
-    permissions:
-      contents: write
-      actions: write
-
-    steps:
-      - name: 1. Pulling System Core
-        uses: actions/checkout@v4
-
-      - name: 2. Initializing Environment
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          # تم حذف الكاش نهائياً لتجنب خطأ Lock File
-
-      - name: 3. Infrastructure Setup
-        run: |
-          mkdir -p evidences
-          npm install playwright@1.41.0 --no-package-lock
-          npx playwright install-deps chromium
-          npx playwright install chromium
-
-      - name: 4. Launching Wahab Engine
-        run: node index.js
-        env:
-          SHEET_URL: ${{ secrets.SHEET_URL }}
-
-      - name: 5. Securing Evidences
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Wahab-Operation-Results
-          path: evidences/
+- name: 🚀 Process Referral Platforms
+  run: |
+    node src/index.js --mode platforms --batch-size 5
+  env:
+    GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+    GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+    GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
