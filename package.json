@@ -1,24 +1,21 @@
 {
-  "name": "wahab-platform-registrar",
-  "version": "1.0.0",
-  "description": "Automated platform registration system using Google Sheets",
-  "main": "src/index-custom.js",
+  "name": "wahab-automation-system",
+  "version": "2.0.0",
+  "description": "نظام أتمتة متكامل للمنصات باستخدام Google Sheets",
+  "main": "src/index.js",
   "scripts": {
-    "start": "node src/index-custom.js",
-    "start:dev": "nodemon src/index-custom.js",
-    "test-platforms": "node src/index-custom.js --test",
-    "generate-report": "node scripts/generate-report.js",
-    "update-sheet": "node scripts/update-sheet.js",
-    "monitor": "node scripts/monitor.js --live"
+    "start": "node src/index.js",
+    "setup": "node src/setup.js",
+    "test": "node src/test-connection.js",
+    "quick-run": "node src/quick-test.js"
   },
   "dependencies": {
     "playwright": "^1.41.0",
     "google-spreadsheet": "^4.1.1",
     "google-auth-library": "^9.0.0",
-    "fs-extra": "^11.2.0",
     "dotenv": "^16.3.0",
+    "axios": "^1.6.2",
     "chalk": "^4.1.2",
-    "ora": "^6.3.1",
-    "moment": "^2.29.4"
+    "ora": "^6.3.1"
   }
 }
