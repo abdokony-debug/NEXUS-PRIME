@@ -1,28 +1,20 @@
 {
-  "name": "wahab-automation-system",
-  "version": "2.0.0",
-  "description": "نظام أتمتة متكامل للمنصات باستخدام Google Sheets",
+  "name": "wahab-system",
+  "version": "1.0.0",
+  "description": "An automated technical ecosystem",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "setup": "node src/setup.js",
-    "test": "node src/test-connection.js",
-    "quick-run": "node src/quick-test.js"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-    "playwright": "^1.41.0",
-    "google-spreadsheet": "^4.1.1",
-    "google-auth-library": "^9.0.0",
-    "dotenv": "^16.3.0",
-    "axios": "^1.6.2",
-    "chalk": "^4.1.2",
-    "ora": "^6.3.1"
-  }
-  "scripts": {
-    "start": "node index.js",
-    "install-browser": "npx playwright install chromium"
+    "axios": "^6.3.1",
+    "googleapis": "^128.0.0"
   },
-  "dependencies": {
-    "playwright": "^1.41.0"
-  }
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
 }
