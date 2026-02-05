@@ -23,13 +23,45 @@ jobs:
       
       - name: Install dependencies
         run: |
-          npm ci
+          # Remove old lock file if exists
+          if [ -f "package-lock.json" ]; then
+            echo "Removing outdated package-lock.json..."
+            rm -f package-lock.json
+          fi
+          
+          # Install dependencies with specific versions
+          echo "Installing dependencies..."
+          npm install axios@^1.6.0 googleapis@^128.0.0 playwright@^1.40.0
+          
+          # Install Playwright
+          echo "Installing Playwright browser..."
           npx playwright install chromium
+      
+      - name: Verify installations
+        run: |
+          echo "Verifying installed packages..."
+          node -e "
+            try {
+              require('axios');
+              console.log('✅ axios is installed');
+            } catch(e) { console.log('❌ axios error:', e.message); }
+            
+            try {
+              require('googleapis');
+              console.log('✅ googleapis is installed');
+            } catch(e) { console.log('❌ googleapis error:', e.message); }
+            
+            try {
+              require('playwright');
+              console.log('✅ playwright is installed');
+            } catch(e) { console.log('❌ playwright error:', e.message); }
+          "
       
       - name: Run Referral System
         run: |
-          echo "Starting Referral Platform Processing..."
+          echo "Starting WAHAB Referral System..."
           echo "Batch size: ${{ github.event.inputs.batch_size }}"
+          echo "Timestamp: $(date)"
           
           node src/index.js --mode platforms --batch-size ${{ github.event.inputs.batch_size }}
         env:
@@ -38,11 +70,11 @@ jobs:
           GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
           NODE_ENV: production
       
-      - name: Upload Processing Report
+      - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: processing-report-$(date +%Y%m%d-%H%M%S)
+          name: processing-logs-$(date +%s)
           path: |
             *.log
-          retention-days: 7
+          retention-days: 1
