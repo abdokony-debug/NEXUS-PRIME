@@ -20,6 +20,7 @@ jobs:
   process:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -29,31 +30,132 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install dependencies
+      - name: Install system dependencies for Playwright
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libnss3 \
+            libnspr4 \
+            libatk1.0-0 \
+            libatk-bridge2.0-0 \
+            libcups2 \
+            libdrm2 \
+            libdbus-1-3 \
+            libxkbcommon0 \
+            libatspi2.0-0 \
+            libxcomposite1 \
+            libxdamage1 \
+            libxfixes3 \
+            libxrandr2 \
+            libgbm1 \
+            libpango-1.0-0 \
+            libcairo2 \
+            libasound2
+
+      - name: Install Node dependencies
         run: |
           # تنظيف أي تبعيات قديمة
           rm -rf node_modules package-lock.json 2>/dev/null || true
+          
+          # إنشاء package.json إذا لم يكن موجوداً
+          if [ ! -f package.json ]; then
+            cat > package.json << EOF
+            {
+              "name": "wahab-system",
+              "version": "1.0.0",
+              "dependencies": {
+                "playwright": "^1.40.0",
+                "googleapis": "^128.0.0"
+              }
+            }
+            EOF
+          fi
+          
           # تثبيت التبعيات
-          npm install axios googleapis playwright
+          npm install
+          
           # تثبيت متصفح Playwright
           npx playwright install chromium
 
+      - name: Verify Google Sheets Access
+        run: |
+          echo "🔍 Verifying Google Sheets permissions..."
+          echo "📧 Service Account: $GOOGLE_CLIENT_EMAIL"
+          echo "📊 Sheet ID: $GOOGLE_SHEET_ID"
+          echo ""
+          echo "⚠️ IMPORTANT: Make sure the Google Sheet is shared with:"
+          echo "   $GOOGLE_CLIENT_EMAIL"
+          echo "   Permission: EDITOR (not just viewer)"
+          echo "🔗 Sheet URL: https://docs.google.com/spreadsheets/d/$GOOGLE_SHEET_ID/edit"
+        env:
+          GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+
       - name: Run WAHAB System
         run: |
-          echo "Starting WAHAB System with mode: ${{ github.event.inputs.mode }}"
-          echo "Batch size: ${{ github.event.inputs.batch_size }}"
+          echo "🚀 Starting WAHAB System with mode: ${{ github.event.inputs.mode }}"
+          echo "📦 Batch size: ${{ github.event.inputs.batch_size }}"
+          echo ""
+          
+          # تشغيل النظام
           node src/index.js --mode ${{ github.event.inputs.mode }} --batch-size ${{ github.event.inputs.batch_size }}
         env:
+          # 🔐 Google Authentication
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
           GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
           GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_SHEET_NAME: ${{ secrets.GOOGLE_SHEET_NAME }}
+          
+          # ⚙️ System Settings
           NODE_ENV: production
+          OPERATION_MODE: fast
+          MAX_PLATFORMS: ${{ github.event.inputs.batch_size }}
+          DELAY_BETWEEN_ACTIONS: 2000
+          SAVE_SCREENSHOTS: false
 
-      - name: Upload logs (optional)
+      - name: Create Summary Report
+        if: always()
+        run: |
+          echo "📊 WAHAB SYSTEM SUMMARY" > summary.txt
+          echo "=======================" >> summary.txt
+          echo "Run Time: $(date)" >> summary.txt
+          echo "Mode: ${{ github.event.inputs.mode }}" >> summary.txt
+          echo "Batch Size: ${{ github.event.inputs.batch_size }}" >> summary.txt
+          echo "Status: ${{ job.status }}" >> summary.txt
+          echo "" >> summary.txt
+          echo "📧 Service Account: ${{ secrets.GOOGLE_CLIENT_EMAIL }}" >> summary.txt
+          echo "📊 Sheet ID: ${{ secrets.GOOGLE_SHEET_ID }}" >> summary.txt
+          
+          cat summary.txt
+
+      - name: Upload logs and report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: logs
+          name: wahab-logs-${{ github.run_id }}
           path: |
+            summary.txt
             *.log
-          retention-days: 1
+            *.json
+          retention-days: 7
+
+      - name: Final Reminder
+        if: failure() && failure() != 'cancelled'
+        run: |
+          echo "🔴 ACTION REQUIRED:"
+          echo "=================="
+          echo "1. Open Google Sheet:"
+          echo "   https://docs.google.com/spreadsheets/d/${{ secrets.GOOGLE_SHEET_ID }}/edit"
+          echo ""
+          echo "2. Click 'Share' button"
+          echo ""
+          echo "3. Add this email:"
+          echo "   ${{ secrets.GOOGLE_CLIENT_EMAIL }}"
+          echo ""
+          echo "4. Set permission to 'Editor'"
+          echo ""
+          echo "5. Click 'Send'"
+          echo ""
+          echo "6. Re-run this workflow"
