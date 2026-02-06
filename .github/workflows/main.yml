@@ -418,26 +418,26 @@ jobs:
           fi
           
           # إنشاء التقرير
-          cat > SYSTEM_REPORT.md << EOF
-# WAHAB AI Registration System - Run Report
-
-## Run Information
-- **Run ID:** ${{ github.run_id }}
-- **Run Number:** ${{ github.run_number }}
-- **Trigger:** ${{ github.event_name }}
-- **Status:** ${{ job.status }}
-- **Start Time:** $(date -d @$RUN_TIMESTAMP 2>/dev/null || echo "N/A")
-- **Duration:** N/A
-
-## Configuration
-- **Mode:** ${{ steps.params.outputs.mode }}
-- **Batch Size:** ${{ steps.params.outputs.batch }}
-- **AI Learning:** ${{ steps.params.outputs.learning }}
-- **Screenshots:** ${{ steps.params.outputs.screenshots }}
-- **Target Platforms:** ${{ steps.params.outputs.target_platforms }}
-
-## Results Summary
-EOF
+          cat > SYSTEM_REPORT.md << 'REPORT_EOF'
+          # WAHAB AI Registration System - Run Report
+          
+          ## Run Information
+          - **Run ID:** ${{ github.run_id }}
+          - **Run Number:** ${{ github.run_number }}
+          - **Trigger:** ${{ github.event_name }}
+          - **Status:** ${{ job.status }}
+          - **Start Time:** $(date -d @$RUN_TIMESTAMP 2>/dev/null || echo "N/A")
+          - **Duration:** N/A
+          
+          ## Configuration
+          - **Mode:** ${{ steps.params.outputs.mode }}
+          - **Batch Size:** ${{ steps.params.outputs.batch }}
+          - **AI Learning:** ${{ steps.params.outputs.learning }}
+          - **Screenshots:** ${{ steps.params.outputs.screenshots }}
+          - **Target Platforms:** ${{ steps.params.outputs.target_platforms }}
+          
+          ## Results Summary
+          REPORT_EOF
           
           # إضافة نتائج إذا وجدت
           if ls results/report-*.json 1> /dev/null 2>&1; then
