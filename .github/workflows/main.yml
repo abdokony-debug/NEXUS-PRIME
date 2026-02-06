@@ -9,11 +9,11 @@ on:
         default: 'intelligent'
         type: choice
         options:
-        - intelligent
-        - fast
-        - stealth
+          - intelligent
+          - fast
+          - stealth
       batch_size:
-        description: 'Number of accounts to create'
+        description: 'Number of accounts'
         required: true
         default: '3'
         type: string
@@ -24,98 +24,17 @@ on:
         type: boolean
 
 jobs:
-  run-wahab:
+  run:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-    
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          wget \
-          ca-certificates \
-          libnss3 \
-          libatk1.0-0 \
-          libxcomposite1 \
-          libxdamage1 \
-          libxrandr2
-    
-    - name: Create package.json for wahab-system
-      run: |
-        cat > package.json << 'PKGEOF'
-{
-  "name": "wahab-system",
-  "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
-  "dependencies": {
-    "playwright": "^1.40.0"
-  }
-}
-PKGEOF
-    
-    - name: Install Node dependencies
-      run: |
-        npm install
-        npx playwright install chromium
-    
-    - name: Create wahab-system script
-      run: |
-        cat > index.js << 'JSCODE'
-console.log('🚀 Starting wahab-system...');
-console.log('===========================');
-
-// Simulate account creation
-const platforms = ['Facebook', 'Twitter', 'Instagram'];
-const results = [];
-
-platforms.forEach((platform, i) => {
-  const success = Math.random() > 0.4;
-  results.push({
-    platform,
-    status: success ? 'SUCCESS' : 'FAILED',
-    account: `user${Date.now()}${i}@wahab.com`,
-    timestamp: new Date().toISOString()
-  });
-  
-  console.log(`${success ? '✅' : '❌'} ${platform}: ${success ? 'Account created' : 'Failed'}`);
-});
-
-console.log('\n📊 Summary:');
-console.log(`Total: ${results.length}`);
-console.log(`Success: ${results.filter(r => r.status === 'SUCCESS').length}`);
-console.log(`Failed: ${results.filter(r => r.status === 'FAILED').length}`);
-console.log('\n✅ wahab-system completed!');
-JSCODE
-    
-    - name: Run wahab-system
-      run: |
-        echo "========================================"
-        echo "🔧 Mode: ${{ github.event.inputs.mode }}"
-        echo "📦 Batch: ${{ github.event.inputs.batch_size }}"
-        echo "🧠 Learning: ${{ github.event.inputs.learning_enabled }}"
-        echo "========================================"
-        
-        node index.js
-    
-    - name: Save results
-      run: |
-        mkdir -p wahab-results
-        echo '{"system":"wahab-system","status":"completed"}' > wahab-results/output.json
-    
-    - name: Upload wahab-results
-      uses: actions/upload-artifact@v4
-      with:
-        name: wahab-results
-        path: wahab-results/
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup
+        run: |
+          echo "🚀 wahab-system"
+          echo "Mode: ${{ github.event.inputs.mode }}"
+          echo "Batch: ${{ github.event.inputs.batch_size }}"
+          echo "Learning: ${{ github.event.inputs.learning_enabled }}"
