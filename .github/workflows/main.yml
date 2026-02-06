@@ -21,61 +21,30 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     
+    # استخدم صورة Docker الرسمية لـ Playwright
+    container:
+      image: mcr.microsoft.com/playwright:v1.40.0-focal
+      options: --user root
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-
-      - name: Install Playwright dependencies for Ubuntu 24.04 (noble)
-        run: |
-          # إصدار Ubuntu
-          echo "📦 Ubuntu Version: $(lsb_release -ds)"
-          
-          # تثبيت الاعتماديات النظامية لـ Playwright على Ubuntu 24.04
-          sudo apt-get update
-          sudo apt-get install -y \
-            libnss3t64 \
-            libnspr4t64 \
-            libatk1.0-0 \
-            libatk-bridge2.0-0 \
-            libcups2t64 \
-            libdrm2t64 \
-            libdbus-1-3 \
-            libxkbcommon0t64 \
-            libatspi2.0-0 \
-            libxcomposite1t64 \
-            libxdamage1t64 \
-            libxfixes3t64 \
-            libxrandr2t64 \
-            libgbm1t64 \
-            libpango-1.0-0 \
-            libcairo2t64 \
-            libasound2t64 \
-            fonts-liberation \
-            libappindicator3-1 \
-            xdg-utils \
-            wget \
-            ca-certificates
-
       - name: Install Node dependencies
         run: |
-          # تنظيف أي تبعيات قديمة
-          rm -rf node_modules package-lock.json 2>/dev/null || true
-          
-          # تثبيت التبعيات الأساسية
+          # تحديث npm وتثبيت الحزم المطلوبة
           npm init -y
-          npm install playwright googleapis
-          
-          # تثبيت متصفح Playwright
-          npx playwright install chromium
-          echo "✅ Playwright installation complete"
+          npm install googleapis
+          # Playwright مثبت مسبقاً في الصورة
+          echo "✅ Dependencies installed"
 
-      - name: Verify Playwright installation
+      - name: Verify environment
         run: |
+          echo "🔍 Environment check:"
+          echo "Node version: $(node --version)"
+          echo "NPM version: $(npm --version)"
+          echo "Playwright version: $(npx playwright --version)"
+          
           # اختبار Playwright
           node -e "
           const { chromium } = require('playwright');
@@ -83,7 +52,9 @@ jobs:
             console.log('🧪 Testing Playwright...');
             const browser = await chromium.launch({ headless: true });
             const page = await browser.newPage();
-            console.log('✅ Playwright is working!');
+            await page.goto('https://example.com');
+            const title = await page.title();
+            console.log('✅ Playwright is working! Title:', title);
             await browser.close();
           })();
           "
@@ -112,12 +83,61 @@ jobs:
           DELAY_BETWEEN_ACTIONS: 2000
           SAVE_SCREENSHOTS: false
 
-      - name: Upload logs and report
+      - name: Create summary report
+        if: always()
+        run: |
+          echo "# WAHAB System Run Report" > report.md
+          echo "## Run Details" >> report.md
+          echo "- **Time:** $(date)" >> report.md
+          echo "- **Mode:** ${{ github.event.inputs.mode }}" >> report.md
+          echo "- **Batch Size:** ${{ github.event.inputs.batch_size }}" >> report.md
+          echo "- **Status:** ${{ job.status }}" >> report.md
+          echo "" >> report.md
+          echo "## Google Sheets Info" >> report.md
+          echo "- **Sheet ID:** ${{ secrets.GOOGLE_SHEET_ID }}" >> report.md
+          echo "- **Service Account:** ${{ secrets.GOOGLE_CLIENT_EMAIL }}" >> report.md
+          
+          # إذا كان هناك ملف log
+          if [ -f "wahab-system.log" ]; then
+            echo "" >> report.md
+            echo "## Last 10 Log Lines" >> report.md
+            echo '```' >> report.md
+            tail -10 wahab-system.log >> report.md
+            echo '```' >> report.md
+          fi
+
+      - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: wahab-logs-${{ github.run_id }}
+          name: wahab-report-${{ github.run_id }}
           path: |
+            report.md
             *.log
             *.json
           retention-days: 7
+
+      - name: Post-run reminder
+        if: always()
+        run: |
+          echo "📋 IMPORTANT REMINDER:" 
+          echo "======================"
+          echo ""
+          echo "To fix the 'permission' error in Google Sheets:"
+          echo ""
+          echo "1. Open your Google Sheet:"
+          echo "   https://docs.google.com/spreadsheets/d/${{ secrets.GOOGLE_SHEET_ID }}/edit"
+          echo ""
+          echo "2. Click 'Share' button"
+          echo ""
+          echo "3. Add this email address:"
+          echo "   ${{ secrets.GOOGLE_CLIENT_EMAIL }}"
+          echo ""
+          echo "4. Set permission to 'Editor' (not 'Viewer')"
+          echo ""
+          echo "5. Click 'Send'"
+          echo ""
+          echo "6. Re-run this workflow"
+          echo ""
+          echo "🔗 Sheet sharing link:"
+          echo "https://docs.google.com/spreadsheets/d/${{ secrets.GOOGLE_SHEET_ID }}/edit#gid=0"
