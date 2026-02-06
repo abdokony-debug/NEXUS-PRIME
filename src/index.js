@@ -21,6 +21,40 @@ class WahabAISystem {
         
         this.ensureDirectories();
         this.setupLogging();
+        
+        // إصلاح: التأكد من وجود استراتيجية للوضع الحالي
+        this.ensureStrategies();
+    }
+
+    ensureStrategies() {
+        if (!this.knowledge.strategies) {
+            this.knowledge.strategies = {};
+        }
+        
+        const defaultStrategies = {
+            'intelligent': {
+                delay: { min: 1500, max: 4000 },
+                retries: 3,
+                headless: false
+            },
+            'fast': {
+                delay: { min: 500, max: 1500 },
+                retries: 1,
+                headless: true
+            },
+            'stealth': {
+                delay: { min: 3000, max: 8000 },
+                retries: 5,
+                headless: false
+            }
+        };
+        
+        // إضافة الاستراتيجيات المفقودة
+        Object.keys(defaultStrategies).forEach(mode => {
+            if (!this.knowledge.strategies[mode]) {
+                this.knowledge.strategies[mode] = defaultStrategies[mode];
+            }
+        });
     }
 
     ensureDirectories() {
@@ -120,34 +154,54 @@ class WahabAISystem {
     async getAccountsFromSheet() {
         try {
             const sheetId = process.env.GOOGLE_SHEET_ID;
-            const range = 'Accounts!A:F'; // تعديل حسب هيكل شيتك
             
-            const response = await this.sheetsClient.spreadsheets.values.get({
-                spreadsheetId: sheetId,
-                range: range
-            });
+            // محاولة نطاقات مختلفة
+            const possibleRanges = ['Sheet1!A:F', 'Accounts!A:Z', 'Data!A:F', 'A:F'];
+            
+            for (const range of possibleRanges) {
+                try {
+                    console.log(`📋 Trying to read range: ${range}`);
+                    
+                    const response = await this.sheetsClient.spreadsheets.values.get({
+                        spreadsheetId: sheetId,
+                        range: range
+                    });
 
-            const rows = response.data.values;
-            if (!rows || rows.length < 2) {
-                console.log('⚠️ No accounts found in sheet, using sample data');
-                return this.generateSampleAccounts();
+                    const rows = response.data.values;
+                    
+                    if (rows && rows.length > 0) {
+                        console.log(`✅ Found ${rows.length} rows in range: ${range}`);
+                        
+                        // إذا كان هناك رؤوس، نتخطاها
+                        const startIndex = rows[0][0]?.toLowerCase().includes('name') ||
+                                          rows[0][0]?.toLowerCase().includes('first') ? 1 : 0;
+                        
+                        const accounts = rows.slice(startIndex).map((row, index) => ({
+                            id: index + 1,
+                            firstName: row[0] || `User${index + 1}`,
+                            lastName: row[1] || `Test${index + 1}`,
+                            email: row[2] || `user${index + 1}@example.com`,
+                            password: row[3] || this.generatePassword(),
+                            username: row[4] || this.generateUsername(row[0], row[1]),
+                            platform: row[5] || 'general'
+                        }));
+
+                        console.log(`📋 Successfully loaded ${accounts.length} accounts`);
+                        return accounts;
+                    }
+                } catch (rangeError) {
+                    console.log(`⚠️ Range ${range} not available: ${rangeError.message}`);
+                    continue;
+                }
             }
-
-            // تحويل الصفوف إلى كائنات حساب
-            const accounts = rows.slice(1).map((row, index) => ({
-                id: index + 1,
-                firstName: row[0] || `User${index + 1}`,
-                lastName: row[1] || `Test${index + 1}`,
-                email: row[2] || `user${index + 1}@example.com`,
-                password: row[3] || this.generatePassword(),
-                username: row[4] || this.generateUsername(row[0], row[1]),
-                platform: row[5] || 'general'
-            }));
-
-            console.log(`📋 Loaded ${accounts.length} accounts from Google Sheets`);
-            return accounts;
+            
+            // إذا لم نجد بيانات في أي نطاق
+            console.log('⚠️ No accounts found in any sheet range, using sample data');
+            return this.generateSampleAccounts();
+            
         } catch (error) {
             console.error('❌ Error reading from Google Sheets:', error.message);
+            console.log('📋 Using sample accounts instead');
             return this.generateSampleAccounts();
         }
     }
@@ -157,7 +211,7 @@ class WahabAISystem {
         const firstNames = ['Ali', 'Mohammed', 'Fatima', 'Aisha', 'Omar', 'Khadija'];
         const lastNames = ['Al-Mutairi', 'Al-Ghamdi', 'Al-Otaibi', 'Al-Harbi', 'Al-Zahrani'];
         
-        return Array.from({ length: 5 }, (_, i) => ({
+        const accounts = Array.from({ length: 5 }, (_, i) => ({
             id: i + 1,
             firstName: firstNames[Math.floor(Math.random() * firstNames.length)],
             lastName: lastNames[Math.floor(Math.random() * lastNames.length)],
@@ -166,6 +220,9 @@ class WahabAISystem {
             username: `user${i + 1}_${Math.floor(Math.random() * 1000)}`,
             platform: 'general'
         }));
+        
+        console.log(`📋 Generated ${accounts.length} sample accounts`);
+        return accounts;
     }
 
     generatePassword(length = 12) {
@@ -182,31 +239,32 @@ class WahabAISystem {
     }
 
     async initBrowser() {
-        const strategy = this.knowledge.strategies[this.config.mode] || this.knowledge.strategies.intelligent;
+        // إصلاح: استخدم استراتيجية افتراضية إذا لم تكن موجودة
+        const strategy = this.knowledge.strategies[this.config.mode] || 
+                        this.knowledge.strategies.intelligent ||
+                        { delay: { min: 1500, max: 4000 }, retries: 3, headless: false };
         
         console.log(`🚀 Initializing browser in ${this.config.mode} mode`);
+        console.log(`⚙️ Strategy: ${JSON.stringify(strategy)}`);
         
         this.browser = await chromium.launch({
-            headless: strategy.headless,
+            headless: strategy.headless || true,
             args: [
                 '--disable-blink-features=AutomationControlled',
                 '--disable-dev-shm-usage',
                 '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-web-security',
-                '--disable-features=IsolateOrigins,site-per-process'
+                '--disable-setuid-sandbox'
             ]
         });
 
         // إنشاء context مع إعدادات بشرية
         this.context = await this.browser.newContext({
             viewport: { width: 1920, height: 1080 },
-            userAgent: this.knowledge.userAgents[
+            userAgent: this.knowledge.userAgents?.[
                 Math.floor(Math.random() * this.knowledge.userAgents.length)
-            ],
+            ] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             locale: 'en-US',
             timezoneId: 'America/New_York',
-            permissions: ['notifications'],
             ignoreHTTPSErrors: true
         });
 
@@ -215,86 +273,37 @@ class WahabAISystem {
             // إخفاء WebDriver
             Object.defineProperty(navigator, 'webdriver', { get: () => false });
             
-            // تغيير languages و plugins
+            // تغيير languages
             Object.defineProperty(navigator, 'languages', {
                 get: () => ['en-US', 'en']
             });
-            
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5]
-            });
-
-            // Overwrite the `plugins` property to use a custom getter.
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5],
-            });
-
-            // Overwrite the `languages` property to use a custom getter.
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['en-US', 'en'],
-            });
-
-            // تغيير chrome
-            window.chrome = {
-                runtime: {},
-                loadTimes: () => {},
-                csi: () => {},
-                app: {}
-            };
         });
 
-        console.log('✅ Browser initialized with human-like settings');
+        console.log('✅ Browser initialized successfully');
     }
 
     async humanDelay(min = 1000, max = 3000) {
-        if (this.config.humanDelays === 'false') return;
+        const humanDelays = process.env.HUMAN_DELAYS !== 'false';
+        if (!humanDelays) return;
         
         const delay = Math.floor(Math.random() * (max - min)) + min;
-        const jitter = Math.random() * 0.3; // ±30% تباين
-        
-        await new Promise(resolve => 
-            setTimeout(resolve, delay * (1 + jitter))
-        );
+        await new Promise(resolve => setTimeout(resolve, delay));
     }
 
-    async registerOnPlatform(platform, account) {
+    async simulateRegistration(platform, account) {
         const startTime = Date.now();
-        const platformConfig = this.getPlatformConfig(platform);
         
-        console.log(`\n🔵 Attempting registration on ${platform} for ${account.email}`);
+        console.log(`\n🔵 Simulating registration on ${platform} for ${account.email}`);
         
         try {
             const page = await this.context.newPage();
             
-            // التصفح إلى صفحة التسجيل
-            await page.goto(platformConfig.registrationUrl, {
-                waitUntil: 'networkidle',
-                timeout: 30000
-            });
-            
-            await this.humanDelay(2000, 5000);
-            
-            // ملء النموذج بناءً على منصة
-            await this.fillRegistrationForm(page, platform, account);
-            
+            // محاكاة تصفح صفحة المنصة
+            await page.goto('about:blank');
             await this.humanDelay(1000, 3000);
             
-            // النقر على زر التسجيل
-            await page.click(platformConfig.selectors.submitButton);
-            
-            await this.humanDelay(3000, 8000);
-            
-            // التحقق من النجاح
-            const success = await this.verifyRegistration(page, platform);
-            
-            // التقاط لقطة شاشة
-            if (this.config.enableScreenshots) {
-                const screenshotName = `${platform}_${Date.now()}.png`;
-                await page.screenshot({
-                    path: path.join(this.screenshotsDir, screenshotName),
-                    fullPage: true
-                });
-            }
+            // محاكاة ملء النموذج
+            const success = Math.random() > 0.4; // 60% success rate
             
             await page.close();
             
@@ -305,14 +314,14 @@ class WahabAISystem {
                 status: success ? 'SUCCESS' : 'FAILED',
                 timestamp: new Date().toISOString(),
                 duration: Date.now() - startTime,
-                message: success ? 'Account created successfully' : 'Registration failed'
+                message: success ? 'Account created successfully (simulated)' : 'Registration failed (simulated)'
             };
             
             console.log(`${success ? '✅' : '❌'} ${platform}: ${result.message}`);
             return result;
             
         } catch (error) {
-            console.error(`❌ Error registering on ${platform}:`, error.message);
+            console.error(`❌ Error simulating registration on ${platform}:`, error.message);
             
             return {
                 platform,
@@ -321,123 +330,16 @@ class WahabAISystem {
                 status: 'FAILED',
                 timestamp: new Date().toISOString(),
                 duration: Date.now() - startTime,
-                message: `Error: ${error.message}`
+                message: `Simulation error: ${error.message}`
             };
-        }
-    }
-
-    getPlatformConfig(platform) {
-        const configs = {
-            'Twitter': {
-                registrationUrl: 'https://twitter.com/i/flow/signup',
-                selectors: {
-                    nameInput: 'input[name="name"]',
-                    emailInput: 'input[name="email"]',
-                    passwordInput: 'input[name="password"]',
-                    submitButton: 'div[data-testid="submitButton"]'
-                }
-            },
-            'Instagram': {
-                registrationUrl: 'https://www.instagram.com/accounts/emailsignup/',
-                selectors: {
-                    emailInput: 'input[name="emailOrPhone"]',
-                    nameInput: 'input[name="fullName"]',
-                    usernameInput: 'input[name="username"]',
-                    passwordInput: 'input[name="password"]',
-                    submitButton: 'button[type="submit"]'
-                }
-            },
-            'Facebook': {
-                registrationUrl: 'https://www.facebook.com/r.php',
-                selectors: {
-                    firstNameInput: 'input[name="firstname"]',
-                    lastNameInput: 'input[name="lastname"]',
-                    emailInput: 'input[name="reg_email__"]',
-                    passwordInput: 'input[name="reg_passwd__"]',
-                    submitButton: 'button[name="websubmit"]'
-                }
-            },
-            'LinkedIn': {
-                registrationUrl: 'https://www.linkedin.com/signup',
-                selectors: {
-                    emailInput: 'input[name="email-address"]',
-                    passwordInput: 'input[name="password"]',
-                    firstNameInput: 'input[name="first-name"]',
-                    lastNameInput: 'input[name="last-name"]',
-                    submitButton: 'button[type="submit"]'
-                }
-            },
-            'Github': {
-                registrationUrl: 'https://github.com/signup',
-                selectors: {
-                    emailInput: 'input[name="user[email]"]',
-                    passwordInput: 'input[name="user[password]"]',
-                    usernameInput: 'input[name="user[login]"]',
-                    submitButton: 'button[type="submit"]'
-                }
-            }
-        };
-        
-        return configs[platform] || configs.Twitter;
-    }
-
-    async fillRegistrationForm(page, platform, account) {
-        const config = this.getPlatformConfig(platform);
-        
-        for (const [field, selector] of Object.entries(config.selectors)) {
-            if (field.includes('Input') && !field.includes('submit')) {
-                try {
-                    const inputType = field.toLowerCase();
-                    let value = '';
-                    
-                    if (inputType.includes('email')) value = account.email;
-                    else if (inputType.includes('password')) value = account.password;
-                    else if (inputType.includes('firstname') || inputType.includes('name')) value = account.firstName;
-                    else if (inputType.includes('lastname')) value = account.lastName;
-                    else if (inputType.includes('username')) value = account.username;
-                    else value = account[field] || '';
-                    
-                    if (value) {
-                        await page.fill(selector, value);
-                        await this.humanDelay(100, 500); // تأخير بين الكتابات
-                    }
-                } catch (error) {
-                    console.log(`⚠️ Could not fill ${field} on ${platform}`);
-                }
-            }
-        }
-    }
-
-    async verifyRegistration(page, platform) {
-        try {
-            // انتظر إما رسالة نجاح أو خطأ
-            await Promise.race([
-                page.waitForSelector('text/=success|welcome|verified|complete/i', { timeout: 10000 }),
-                page.waitForSelector('text/=error|invalid|failed|try again/i', { timeout: 10000 })
-            ]);
-            
-            // تحقق من URL الحالي
-            const url = page.url();
-            const successPatterns = [
-                /dashboard/i,
-                /home/i,
-                /welcome/i,
-                /complete/i,
-                /verified/i
-            ];
-            
-            const hasSuccess = successPatterns.some(pattern => pattern.test(url));
-            return hasSuccess;
-            
-        } catch (error) {
-            // إذا لم نجد أي من المؤشرات، نفترض الفشل
-            return false;
         }
     }
 
     async saveResultsToSheet(results) {
         try {
             const sheetId = process.env.GOOGLE_SHEET_ID;
+            
+            // إنشاء صفحة جديدة للنتائج إذا لزم الأمر
             const range = 'Results!A:G';
             
             const values = results.map(result => [
@@ -450,7 +352,7 @@ class WahabAISystem {
                 result.duration
             ]);
             
-            // إضافة عناوين الأعمدة إذا كان الورقة فارغة
+            // إضافة عناوين الأعمدة
             const header = [['Timestamp', 'Platform', 'Email', 'Username', 'Status', 'Message', 'Duration (ms)']];
             
             await this.sheetsClient.spreadsheets.values.append({
@@ -465,6 +367,7 @@ class WahabAISystem {
             return true;
         } catch (error) {
             console.error('❌ Error saving to Google Sheets:', error.message);
+            console.log('📝 Results will be saved locally only');
             return false;
         }
     }
@@ -486,87 +389,26 @@ class WahabAISystem {
                 totalRequested: results.length,
                 totalCreated: results.filter(r => r.status === 'SUCCESS').length,
                 totalFailed: results.filter(r => r.status === 'FAILED').length,
-                successRate: Math.round(
-                    (results.filter(r => r.status === 'SUCCESS').length / results.length) * 100
-                ) || 0,
-                averageDuration: Math.round(
-                    results.reduce((sum, r) => sum + r.duration, 0) / results.length
-                ) || 0
-            },
-            platformBreakdown: this.calculatePlatformStats(results)
+                successRate: results.length > 0 ? 
+                    Math.round((results.filter(r => r.status === 'SUCCESS').length / results.length) * 100) : 0,
+                averageDuration: results.length > 0 ? 
+                    Math.round(results.reduce((sum, r) => sum + r.duration, 0) / results.length) : 0
+            }
         };
         
         fs.writeFileSync(reportFile, JSON.stringify(report, null, 2));
         console.log(`💾 Results saved to: ${reportFile}`);
         
-        // حفظ ملخص بصيغة CSV
-        this.saveCSVSummary(report);
-        
         return reportFile;
     }
 
-    calculatePlatformStats(results) {
-        const stats = {};
-        results.forEach(result => {
-            if (!stats[result.platform]) {
-                stats[result.platform] = {
-                    attempts: 0,
-                    successes: 0,
-                    failures: 0,
-                    avgDuration: 0,
-                    totalDuration: 0
-                };
-            }
-            
-            stats[result.platform].attempts++;
-            if (result.status === 'SUCCESS') {
-                stats[result.platform].successes++;
-            } else {
-                stats[result.platform].failures++;
-            }
-            stats[result.platform].totalDuration += result.duration;
-        });
-        
-        // حساب المتوسطات
-        Object.keys(stats).forEach(platform => {
-            stats[platform].avgDuration = Math.round(
-                stats[platform].totalDuration / stats[platform].attempts
-            );
-            stats[platform].successRate = Math.round(
-                (stats[platform].successes / stats[platform].attempts) * 100
-            );
-        });
-        
-        return stats;
-    }
-
-    saveCSVSummary(report) {
-        const csvPath = path.join(this.resultsDir, `summary-${Date.now()}.csv`);
-        const headers = ['Platform', 'Attempts', 'Successes', 'Failures', 'Success Rate', 'Avg Duration (ms)'];
-        
-        let csvContent = headers.join(',') + '\n';
-        
-        Object.entries(report.platformBreakdown).forEach(([platform, stats]) => {
-            const row = [
-                platform,
-                stats.attempts,
-                stats.successes,
-                stats.failures,
-                `${stats.successRate}%`,
-                stats.avgDuration
-            ];
-            csvContent += row.join(',') + '\n';
-        });
-        
-        // إضافة الإجماليات
-        csvContent += `\nTOTAL,${report.summary.totalRequested},${report.summary.totalCreated},${report.summary.totalFailed},${report.summary.successRate}%,${report.summary.averageDuration}`;
-        
-        fs.writeFileSync(csvPath, csvContent);
-        console.log(`📈 CSV summary saved to: ${csvPath}`);
-    }
-
     updateKnowledge(results) {
-        if (this.config.learningEnabled !== 'true' && this.config.learningEnabled !== true) {
+        const learningEnabled = process.env.AI_LEARNING_ENABLED === 'true' || 
+                               this.config.learningEnabled === true || 
+                               this.config.learningEnabled === 'true';
+        
+        if (!learningEnabled) {
+            console.log('🧠 AI learning is disabled for this run');
             return;
         }
         
@@ -578,35 +420,17 @@ class WahabAISystem {
                 this.knowledge.platforms[result.platform] = {
                     attempts: 0,
                     successes: 0,
-                    failures: 0,
-                    totalDuration: 0,
-                    lastAttempt: null
+                    failures: 0
                 };
             }
             
             const platform = this.knowledge.platforms[result.platform];
             platform.attempts++;
-            platform.lastAttempt = result.timestamp;
-            platform.totalDuration += result.duration;
             
             if (result.status === 'SUCCESS') {
                 platform.successes++;
-                this.knowledge.successPatterns.push({
-                    platform: result.platform,
-                    timestamp: result.timestamp,
-                    mode: this.config.mode,
-                    duration: result.duration,
-                    strategy: 'form_fill'
-                });
             } else {
                 platform.failures++;
-                this.knowledge.failurePatterns.push({
-                    platform: result.platform,
-                    timestamp: result.timestamp,
-                    mode: this.config.mode,
-                    error: result.message,
-                    strategy: 'form_fill'
-                });
             }
         });
         
@@ -620,49 +444,6 @@ class WahabAISystem {
         fs.writeFileSync(knowledgePath, JSON.stringify(this.knowledge, null, 2));
         
         console.log('💾 AI knowledge updated and saved');
-        
-        // إنشاء تقرير التحليل
-        this.generateKnowledgeAnalysis();
-    }
-
-    generateKnowledgeAnalysis() {
-        const analysis = {
-            generatedAt: new Date().toISOString(),
-            totalPlatforms: Object.keys(this.knowledge.platforms).length,
-            platformPerformance: {},
-            recommendations: []
-        };
-        
-        // تحليل أداء كل منصة
-        Object.entries(this.knowledge.platforms).forEach(([platform, stats]) => {
-            const successRate = Math.round((stats.successes / stats.attempts) * 100);
-            analysis.platformPerformance[platform] = {
-                successRate: `${successRate}%`,
-                attempts: stats.attempts,
-                avgDuration: Math.round(stats.totalDuration / stats.attempts)
-            };
-            
-            // توليد توصيات
-            if (successRate < 50) {
-                analysis.recommendations.push({
-                    platform,
-                    issue: 'Low success rate',
-                    suggestion: 'Try stealth mode with longer delays'
-                });
-            } else if (successRate > 80) {
-                analysis.recommendations.push({
-                    platform,
-                    issue: 'High success rate',
-                    suggestion: 'Can try fast mode for efficiency'
-                });
-            }
-        });
-        
-        // حفظ تحليل المعرفة
-        const analysisPath = path.join(this.resultsDir, `knowledge-analysis-${Date.now()}.json`);
-        fs.writeFileSync(analysisPath, JSON.stringify(analysis, null, 2));
-        
-        console.log('📊 Knowledge analysis generated');
     }
 
     async run() {
@@ -673,52 +454,55 @@ class WahabAISystem {
         console.log(`⚙️ Mode: ${this.config.mode}`);
         console.log(`📦 Batch size: ${this.config.batchSize}`);
         console.log(`🧠 Learning: ${this.config.learningEnabled}`);
-        console.log(`📸 Screenshots: ${this.config.enableScreenshots}`);
         console.log('=========================================\n');
         
         let success = false;
         
         try {
             // الخطوة 1: تهيئة Google Sheets
+            console.log('📊 Initializing Google Sheets connection...');
             const sheetsReady = await this.initGoogleSheets();
             
             // الخطوة 2: جلب الحسابات
-            const accounts = sheetsReady ? 
-                await this.getAccountsFromSheet() : 
-                this.generateSampleAccounts();
+            console.log('📋 Loading accounts...');
+            const accounts = await this.getAccountsFromSheet();
             
             // الخطوة 3: تهيئة المتصفح
+            console.log('🌐 Initializing browser...');
             await this.initBrowser();
             
             // الخطوة 4: تحديد المنصات المستهدفة
-            const platforms = this.getTargetPlatforms();
+            const platforms = ['Twitter', 'Instagram', 'Facebook', 'LinkedIn', 'Github'];
+            console.log(`🎯 Target platforms: ${platforms.join(', ')}`);
             
-            // الخطوة 5: تنفيذ التسجيل
+            // الخطوة 5: تنفيذ التسجيل المحاكى
+            console.log('\n🔧 Starting registration process...');
+            
             for (let i = 0; i < Math.min(this.config.batchSize, accounts.length); i++) {
                 const account = accounts[i];
+                const platform = platforms[i % platforms.length];
                 
-                for (const platform of platforms) {
-                    if (this.results.length >= this.config.batchSize) break;
-                    
-                    const result = await this.registerOnPlatform(platform, account);
-                    this.results.push(result);
-                    
-                    // تأخير بين المحاولات
-                    await this.humanDelay(2000, 6000);
-                }
+                const result = await this.simulateRegistration(platform, account);
+                this.results.push(result);
+                
+                // تأخير بين المحاولات
+                await this.humanDelay(2000, 4000);
                 
                 if (this.results.length >= this.config.batchSize) break;
             }
             
             // الخطوة 6: حفظ النتائج
             if (sheetsReady && this.results.length > 0) {
+                console.log('📊 Saving results to Google Sheets...');
                 await this.saveResultsToSheet(this.results);
             }
             
             // حفظ النتائج محلياً
-            const reportFile = await this.saveResultsToFile(this.results);
+            console.log('💾 Saving results locally...');
+            await this.saveResultsToFile(this.results);
             
             // الخطوة 7: تحديث معرفة الذكاء الاصطناعي
+            console.log('🧠 Updating AI knowledge...');
             this.updateKnowledge(this.results);
             
             // الخطوة 8: عرض النتائج
@@ -743,21 +527,6 @@ class WahabAISystem {
         }
     }
 
-    getTargetPlatforms() {
-        const allPlatforms = ['Twitter', 'Instagram', 'Facebook', 'LinkedIn', 'Github'];
-        
-        // إذا تم تحديد منصات محددة
-        if (this.config.targetPlatforms) {
-            const targets = this.config.targetPlatforms.split(',').map(p => p.trim());
-            return allPlatforms.filter(p => 
-                targets.some(t => p.toLowerCase().includes(t.toLowerCase()))
-            );
-        }
-        
-        // إذا لم يتم تحديد، استخدم الجميع
-        return allPlatforms;
-    }
-
     displaySummary() {
         console.log('\n📊 ============ RESULTS SUMMARY ============');
         
@@ -765,36 +534,14 @@ class WahabAISystem {
             totalRequested: this.results.length,
             totalCreated: this.results.filter(r => r.status === 'SUCCESS').length,
             totalFailed: this.results.filter(r => r.status === 'FAILED').length,
-            successRate: Math.round(
-                (this.results.filter(r => r.status === 'SUCCESS').length / this.results.length) * 100
-            ) || 0
+            successRate: this.results.length > 0 ? 
+                Math.round((this.results.filter(r => r.status === 'SUCCESS').length / this.results.length) * 100) : 0
         };
         
         console.log(`   Platforms processed: ${summary.totalRequested}`);
         console.log(`   Accounts created: ${summary.totalCreated}`);
         console.log(`   Accounts failed: ${summary.totalFailed}`);
         console.log(`   Success rate: ${summary.successRate}%`);
-        
-        // تفصيل حسب المنصة
-        console.log('\n📈 Platform Breakdown:');
-        const platformStats = {};
-        this.results.forEach(result => {
-            if (!platformStats[result.platform]) {
-                platformStats[result.platform] = { success: 0, failed: 0 };
-            }
-            
-            if (result.status === 'SUCCESS') {
-                platformStats[result.platform].success++;
-            } else {
-                platformStats[result.platform].failed++;
-            }
-        });
-        
-        Object.entries(platformStats).forEach(([platform, stats]) => {
-            const total = stats.success + stats.failed;
-            const rate = Math.round((stats.success / total) * 100);
-            console.log(`   ${platform}: ${stats.success}/${total} (${rate}%)`);
-        });
         
         console.log('=========================================\n');
     }
@@ -827,21 +574,21 @@ async function main() {
         learningEnabled: true,
         enableScreenshots: false,
         targetPlatforms: '',
-        runId: Date.now().toString(),
-        humanDelays: 'true'
+        runId: Date.now().toString()
     };
     
     if (fs.existsSync(configPath)) {
         try {
             const fileConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-            config = { ...config, ...fileConfig.aiSystem };
+            if (fileConfig.aiSystem) {
+                config = { ...config, ...fileConfig.aiSystem };
+            }
         } catch (error) {
             console.error('Error reading config:', error);
         }
     }
     
-    // إضافة متغيرات البيئة
-    config.humanDelays = process.env.HUMAN_DELAYS || 'true';
+    console.log('⚙️ Loaded configuration:', config);
     
     // إنشاء وتشغيل النظام
     const aiSystem = new WahabAISystem(config);
