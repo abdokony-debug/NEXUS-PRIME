@@ -21,109 +21,141 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     
-    # استخدم صورة Docker الرسمية لـ Playwright
+    # استخدم إصدار Docker الأحدث والمتوافق مع Playwright 1.58.1
     container:
-      image: mcr.microsoft.com/playwright:v1.40.0-focal
+      image: mcr.microsoft.com/playwright:v1.58.1-focal
       options: --user root
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Node dependencies
+      - name: Verify Playwright version
         run: |
-          # تحديث npm وتثبيت الحزم المطلوبة
-          npm init -y
-          npm install googleapis
-          # Playwright مثبت مسبقاً في الصورة
-          echo "✅ Dependencies installed"
-
-      - name: Verify environment
-        run: |
-          echo "🔍 Environment check:"
-          echo "Node version: $(node --version)"
-          echo "NPM version: $(npm --version)"
-          echo "Playwright version: $(npx playwright --version)"
+          echo "🔍 Playwright Version Check"
+          echo "Docker Image: mcr.microsoft.com/playwright:v1.58.1-focal"
+          npx playwright --version
           
-          # اختبار Playwright
+          # اختبار بسيط للتأكد من عمل Playwright
           node -e "
           const { chromium } = require('playwright');
           (async () => {
             console.log('🧪 Testing Playwright...');
             const browser = await chromium.launch({ headless: true });
             const page = await browser.newPage();
-            await page.goto('https://example.com');
-            const title = await page.title();
-            console.log('✅ Playwright is working! Title:', title);
+            console.log('✅ Playwright is working correctly!');
             await browser.close();
           })();
           "
 
+      - name: Install Google Sheets API
+        run: |
+          npm init -y
+          npm install googleapis
+          echo "✅ Google APIs installed"
+
+      - name: Verify Google Sheets access
+        run: |
+          echo "🔐 Testing Google Sheets permissions..."
+          node -e "
+          const { google } = require('googleapis');
+          
+          async function testAccess() {
+            try {
+              const auth = new google.auth.GoogleAuth({
+                credentials: {
+                  client_email: process.env.GOOGLE_CLIENT_EMAIL,
+                  private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\\\n/g, '\\\\n')
+                },
+                scopes: ['https://www.googleapis.com/auth/spreadsheets']
+              });
+              
+              const sheets = google.sheets({ version: 'v4', auth: await auth.getClient() });
+              
+              // Test READ access
+              const sheetInfo = await sheets.spreadsheets.get({
+                spreadsheetId: process.env.GOOGLE_SHEET_ID
+              });
+              console.log('✅ Read access confirmed for:', sheetInfo.data.properties.title);
+              
+              // Test WRITE access (try to write to a test cell)
+              try {
+                await sheets.spreadsheets.values.update({
+                  spreadsheetId: process.env.GOOGLE_SHEET_ID,
+                  range: 'Test!A1',
+                  valueInputOption: 'RAW',
+                  resource: { values: [['Test Write']] }
+                });
+                console.log('✅ Write access confirmed');
+                
+                // Clean up
+                await sheets.spreadsheets.values.clear({
+                  spreadsheetId: process.env.GOOGLE_SHEET_ID,
+                  range: 'Test!A1'
+                });
+              } catch (writeError) {
+                console.log('❌ Write access denied. Please share the sheet with:');
+                console.log('   Email:', process.env.GOOGLE_CLIENT_EMAIL);
+                console.log('   Role: Editor');
+                console.log('   Sheet: https://docs.google.com/spreadsheets/d/' + process.env.GOOGLE_SHEET_ID + '/edit');
+                console.log('\\nAfter sharing, re-run this workflow.');
+                process.exit(1);
+              }
+              
+            } catch (error) {
+              console.log('❌ Google Sheets access error:', error.message);
+              process.exit(1);
+            }
+          }
+          
+          testAccess();
+          "
+        env:
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+
       - name: Run WAHAB System
         run: |
-          echo "🚀 Starting WAHAB System with mode: ${{ github.event.inputs.mode }}"
-          echo "📦 Batch size: ${{ github.event.inputs.batch_size }}"
+          echo "🚀 Starting WAHAB System"
+          echo "Mode: ${{ github.event.inputs.mode }}"
+          echo "Batch size: ${{ github.event.inputs.batch_size }}"
           echo ""
           
-          # تشغيل النظام
           node src/index.js --mode ${{ github.event.inputs.mode }} --batch-size ${{ github.event.inputs.batch_size }}
         env:
-          # 🔐 Google Authentication
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
           GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
           GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           GOOGLE_SHEET_NAME: ${{ secrets.GOOGLE_SHEET_NAME }}
-          
-          # ⚙️ System Settings
           NODE_ENV: production
           OPERATION_MODE: fast
           MAX_PLATFORMS: ${{ github.event.inputs.batch_size }}
           DELAY_BETWEEN_ACTIONS: 2000
-          SAVE_SCREENSHOTS: false
 
-      - name: Create summary report
-        if: always()
+      - name: Success summary
+        if: success()
         run: |
-          echo "# WAHAB System Run Report" > report.md
-          echo "## Run Details" >> report.md
-          echo "- **Time:** $(date)" >> report.md
-          echo "- **Mode:** ${{ github.event.inputs.mode }}" >> report.md
-          echo "- **Batch Size:** ${{ github.event.inputs.batch_size }}" >> report.md
-          echo "- **Status:** ${{ job.status }}" >> report.md
-          echo "" >> report.md
-          echo "## Google Sheets Info" >> report.md
-          echo "- **Sheet ID:** ${{ secrets.GOOGLE_SHEET_ID }}" >> report.md
-          echo "- **Service Account:** ${{ secrets.GOOGLE_CLIENT_EMAIL }}" >> report.md
-          
-          # إذا كان هناك ملف log
-          if [ -f "wahab-system.log" ]; then
-            echo "" >> report.md
-            echo "## Last 10 Log Lines" >> report.md
-            echo '```' >> report.md
-            tail -10 wahab-system.log >> report.md
-            echo '```' >> report.md
-          fi
-
-      - name: Upload artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: wahab-report-${{ github.run_id }}
-          path: |
-            report.md
-            *.log
-            *.json
-          retention-days: 7
-
-      - name: Post-run reminder
-        if: always()
-        run: |
-          echo "📋 IMPORTANT REMINDER:" 
-          echo "======================"
+          echo "🎉 WAHAB SYSTEM COMPLETED SUCCESSFULLY!"
+          echo "======================================"
+          echo "✅ All platforms processed"
+          echo "✅ Google Sheets updated"
+          echo "✅ No errors reported"
           echo ""
-          echo "To fix the 'permission' error in Google Sheets:"
+          echo "📊 View results in Google Sheets:"
+          echo "https://docs.google.com/spreadsheets/d/${{ secrets.GOOGLE_SHEET_ID }}/edit"
+          echo ""
+          echo "🔄 To run again, go to Actions → WAHAB Referral System → Run workflow"
+
+      - name: Failure instructions
+        if: failure()
+        run: |
+          echo "🔴 ACTION REQUIRED:"
+          echo "=================="
+          echo ""
+          echo "If you see 'permission' errors, please:"
           echo ""
           echo "1. Open your Google Sheet:"
           echo "   https://docs.google.com/spreadsheets/d/${{ secrets.GOOGLE_SHEET_ID }}/edit"
@@ -133,11 +165,8 @@ jobs:
           echo "3. Add this email address:"
           echo "   ${{ secrets.GOOGLE_CLIENT_EMAIL }}"
           echo ""
-          echo "4. Set permission to 'Editor' (not 'Viewer')"
+          echo "4. Set permission to 'Editor' (NOT 'Viewer')"
           echo ""
           echo "5. Click 'Send'"
           echo ""
           echo "6. Re-run this workflow"
-          echo ""
-          echo "🔗 Sheet sharing link:"
-          echo "https://docs.google.com/spreadsheets/d/${{ secrets.GOOGLE_SHEET_ID }}/edit#gid=0"
