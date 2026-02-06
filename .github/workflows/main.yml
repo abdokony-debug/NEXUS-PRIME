@@ -30,66 +30,63 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install system dependencies for Playwright
+      - name: Install Playwright dependencies for Ubuntu 24.04 (noble)
         run: |
+          # إصدار Ubuntu
+          echo "📦 Ubuntu Version: $(lsb_release -ds)"
+          
+          # تثبيت الاعتماديات النظامية لـ Playwright على Ubuntu 24.04
           sudo apt-get update
           sudo apt-get install -y \
-            libnss3 \
-            libnspr4 \
+            libnss3t64 \
+            libnspr4t64 \
             libatk1.0-0 \
             libatk-bridge2.0-0 \
-            libcups2 \
-            libdrm2 \
+            libcups2t64 \
+            libdrm2t64 \
             libdbus-1-3 \
-            libxkbcommon0 \
+            libxkbcommon0t64 \
             libatspi2.0-0 \
-            libxcomposite1 \
-            libxdamage1 \
-            libxfixes3 \
-            libxrandr2 \
-            libgbm1 \
+            libxcomposite1t64 \
+            libxdamage1t64 \
+            libxfixes3t64 \
+            libxrandr2t64 \
+            libgbm1t64 \
             libpango-1.0-0 \
-            libcairo2 \
-            libasound2
+            libcairo2t64 \
+            libasound2t64 \
+            fonts-liberation \
+            libappindicator3-1 \
+            xdg-utils \
+            wget \
+            ca-certificates
 
       - name: Install Node dependencies
         run: |
           # تنظيف أي تبعيات قديمة
           rm -rf node_modules package-lock.json 2>/dev/null || true
           
-          # إنشاء package.json إذا لم يكن موجوداً
-          if [ ! -f package.json ]; then
-            cat > package.json << EOF
-            {
-              "name": "wahab-system",
-              "version": "1.0.0",
-              "dependencies": {
-                "playwright": "^1.40.0",
-                "googleapis": "^128.0.0"
-              }
-            }
-            EOF
-          fi
-          
-          # تثبيت التبعيات
-          npm install
+          # تثبيت التبعيات الأساسية
+          npm init -y
+          npm install playwright googleapis
           
           # تثبيت متصفح Playwright
           npx playwright install chromium
+          echo "✅ Playwright installation complete"
 
-      - name: Verify Google Sheets Access
+      - name: Verify Playwright installation
         run: |
-          echo "🔍 Verifying Google Sheets permissions..."
-          echo "📧 Service Account: $GOOGLE_CLIENT_EMAIL"
-          echo "📊 Sheet ID: $GOOGLE_SHEET_ID"
-          echo ""
-          echo "⚠️ IMPORTANT: Make sure the Google Sheet is shared with:"
-          echo "   $GOOGLE_CLIENT_EMAIL"
-          echo "   Permission: EDITOR (not just viewer)"
-          echo "🔗 Sheet URL: https://docs.google.com/spreadsheets/d/$GOOGLE_SHEET_ID/edit"
-        env:
-          GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
-          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          # اختبار Playwright
+          node -e "
+          const { chromium } = require('playwright');
+          (async () => {
+            console.log('🧪 Testing Playwright...');
+            const browser = await chromium.launch({ headless: true });
+            const page = await browser.newPage();
+            console.log('✅ Playwright is working!');
+            await browser.close();
+          })();
+          "
 
       - name: Run WAHAB System
         run: |
@@ -115,47 +112,12 @@ jobs:
           DELAY_BETWEEN_ACTIONS: 2000
           SAVE_SCREENSHOTS: false
 
-      - name: Create Summary Report
-        if: always()
-        run: |
-          echo "📊 WAHAB SYSTEM SUMMARY" > summary.txt
-          echo "=======================" >> summary.txt
-          echo "Run Time: $(date)" >> summary.txt
-          echo "Mode: ${{ github.event.inputs.mode }}" >> summary.txt
-          echo "Batch Size: ${{ github.event.inputs.batch_size }}" >> summary.txt
-          echo "Status: ${{ job.status }}" >> summary.txt
-          echo "" >> summary.txt
-          echo "📧 Service Account: ${{ secrets.GOOGLE_CLIENT_EMAIL }}" >> summary.txt
-          echo "📊 Sheet ID: ${{ secrets.GOOGLE_SHEET_ID }}" >> summary.txt
-          
-          cat summary.txt
-
       - name: Upload logs and report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: wahab-logs-${{ github.run_id }}
           path: |
-            summary.txt
             *.log
             *.json
           retention-days: 7
-
-      - name: Final Reminder
-        if: failure() && failure() != 'cancelled'
-        run: |
-          echo "🔴 ACTION REQUIRED:"
-          echo "=================="
-          echo "1. Open Google Sheet:"
-          echo "   https://docs.google.com/spreadsheets/d/${{ secrets.GOOGLE_SHEET_ID }}/edit"
-          echo ""
-          echo "2. Click 'Share' button"
-          echo ""
-          echo "3. Add this email:"
-          echo "   ${{ secrets.GOOGLE_CLIENT_EMAIL }}"
-          echo ""
-          echo "4. Set permission to 'Editor'"
-          echo ""
-          echo "5. Click 'Send'"
-          echo ""
-          echo "6. Re-run this workflow"
