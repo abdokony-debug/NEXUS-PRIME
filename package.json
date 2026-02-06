@@ -1,20 +1,30 @@
 {
-  "name": "wahab-referral-system",
-  "version": "3.0.0",
-  "description": "WAHAB System for automated referral platform processing",
-  "main": "src/index.js",
-  "scripts": {
-    "start": "node src/index.js --mode platforms --batch-size 5",
-    "process": "node src/index.js",
-    "test": "node src/index.js --mode platforms --batch-size 1",
-    "full": "node src/index.js --mode platforms --batch-size 20"
-  },
-  "dependencies": {
-    "axios": "^1.6.0",
-    "googleapis": "^128.0.0",
-    "playwright": "^1.40.0"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  }
+    "name": "wahab-ai-system",
+    "version": "2.0.0",
+    "description": "نظام تسجيل ذكي يعمل كبشري تماماً",
+    "main": "src/index.js",
+    "scripts": {
+        "start": "node src/index.js",
+        "test": "jest",
+        "train": "node src/train.js"
+    },
+    "dependencies": {
+        "playwright": "^1.40.0",
+        "googleapis": "^128.0.0",
+        "@faker-js/faker": "^8.0.0",
+        "axios": "^1.6.0",
+        "sqlite3": "^5.1.6",
+        "nodemailer": "^6.9.0",
+        "imap-simple": "^5.1.0",
+        "cheerio": "^1.0.0",
+        "natural": "^6.0.0",
+        "brain.js": "^2.0.0",
+        "winston": "^3.11.0"
+    },
+    "devDependencies": {
+        "jest": "^29.0.0"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    }
 }
