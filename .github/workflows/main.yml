@@ -61,35 +61,37 @@ jobs:
             libappindicator3-1 \
             xdg-utils \
             wget \
-            ca-certificates
+            ca-certificates \
+            jq  # لـ JSON config آمن[web:23]
 
       - name: Create package.json
         run: |
           cat > package.json << 'EOF'
 {
   "name": "wahab-ai-system",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "main": "src/index.js",
   "dependencies": {
-    "playwright": "^1.40.0",
-    "googleapis": "^128.0.0"
+    "playwright": "^1.48.0",
+    "googleapis": "^128.0.0",
+    "axios": "^1.8.0"
   },
   "scripts": {
     "start": "node src/index.js"
   }
 }
 EOF
-          echo "📦 package.json created"
+          echo "📦 package.json created (مع axios + playwright حديث)"
 
       - name: Install Node dependencies
         run: |
           npm install
-          npx playwright install chromium
-          echo "✅ Dependencies installed"
+          npx playwright install --with-deps chromium  # deps مدمجة[web:18][web:26]
+          echo "✅ Dependencies + Chromium installed"
 
       - name: Create directories
         run: |
-          mkdir -p results screenshots logs src
+          mkdir -p results screenshots logs src /tmp/google-auth
           echo "📁 Directories created"
 
       - name: Load previous knowledge
@@ -101,71 +103,76 @@ EOF
             echo "🧠 Starting fresh AI learning..."
           fi
 
-      - name: Create configuration file
+      - name: Setup Google Service Account (Multiline Safe)
+        env:
+          GOOGLE_PRIVATE_KEY_B64: ${{ secrets.GOOGLE_PRIVATE_KEY }}
         run: |
-          MODE="${{ github.event.inputs.mode }}"
-          BATCH="${{ github.event.inputs.batch_size }}"
-          LEARNING="${{ github.event.inputs.learning_enabled }}"
-          RUN_ID="${{ github.run_id }}"
+          # Decode multiline private key[web:28][web:33]
+          echo "$GOOGLE_PRIVATE_KEY_B64" | base64 -d > /tmp/google-auth/key.json
+          echo "/tmp/google-auth/key.json created for googleapis"
+        shell: bash
+
+      - name: Create configuration file (JSON Safe)
+        env:
+          MODE: ${{ github.event.inputs.mode }}
+          BATCH: ${{ github.event.inputs.batch_size }}
+          LEARNING: ${{ github.event.inputs.learning_enabled }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          jq -n \
+            --arg mode "$MODE" \
+            --argjson batch "$BATCH" \
+            --argjson learning "$LEARNING" \
+            --arg runId "$RUN_ID" \
+            '{
+              aiSystem: {
+                version: "2.1.0",
+                mode: $mode,
+                batchSize: $batch,
+                learningEnabled: $learning,
+                enableScreenshots: false,
+                targetPlatforms: "",
+                runType: "manual",
+                runId: $runId
+              },
+              settings: {
+                maxRetries: 3,
+                timeout: 300000,
+                humanLikeDelays: true,
+                minDelay: 1000,
+                maxDelay: 5000,
+                headless: true,
+                googleKeyFile: "/tmp/google-auth/key.json"
+              }
+            }' > config.json
           
-          cat > config.json << CONFIGEOF
-{
-  "aiSystem": {
-    "version": "2.0.0",
-    "mode": "$MODE",
-    "batchSize": $BATCH,
-    "learningEnabled": $LEARNING,
-    "enableScreenshots": false,
-    "targetPlatforms": "",
-    "runType": "manual",
-    "runId": "$RUN_ID"
-  },
-  "settings": {
-    "maxRetries": 3,
-    "timeout": 300000,
-    "humanLikeDelays": true,
-    "minDelay": 1000,
-    "maxDelay": 5000,
-    "headless": true
-  }
-}
-CONFIGEOF
-          
-          echo "⚙️ Configuration created"
-          echo "Mode: $MODE"
-          echo "Batch: $BATCH"
-          echo "Learning: $LEARNING"
+          echo "⚙️ Configuration created (JSON valid)"
+          cat config.json
 
       - name: Run AI Registration System
         run: |
           echo "🚀 Starting WAHAB AI Registration System"
+          echo "Mode: ${{ github.event.inputs.mode }}"
+          echo "Batch size: ${{ github.event.inputs.batch_size }}"
+          echo "AI Learning: ${{ github.event.inputs.learning_enabled }}"
           
-          MODE="${{ github.event.inputs.mode }}"
-          BATCH="${{ github.event.inputs.batch_size }}"
-          LEARNING="${{ github.event.inputs.learning_enabled }}"
-          
-          echo "Mode: $MODE"
-          echo "Batch size: $BATCH"
-          echo "AI Learning: $LEARNING"
-          echo ""
-          
-          export AI_MODE="$MODE"
-          export AI_BATCH_SIZE="$BATCH"
-          export AI_LEARNING_ENABLED="$LEARNING"
+          export AI_MODE="${{ github.event.inputs.mode }}"
+          export AI_BATCH_SIZE="${{ github.event.inputs.batch_size }}"
+          export AI_LEARNING_ENABLED="${{ github.event.inputs.learning_enabled }}"
           export HUMAN_DELAYS=true
+          export GOOGLE_APPLICATION_CREDENTIALS="/tmp/google-auth/key.json"
           
           node src/index.js
         env:
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
           GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
-          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           NODE_ENV: production
 
       - name: Save AI knowledge
         run: |
           if [ -f "knowledge.json" ]; then
-            echo "💾 Saving AI knowledge for next run..."
+            echo "💾 Saving AI knowledge..."
             cp knowledge.json results/knowledge-saved-$(date +%s).json
           fi
 
@@ -188,7 +195,7 @@ CONFIGEOF
             echo "" >> summary.md
             echo "## Results" >> summary.md
             echo '```json' >> summary.md
-            cat $latest_report | python3 -c "
+            cat "$latest_report" | python3 -c "
 import json,sys
 data=json.load(sys.stdin)
 print(f'Platforms Processed: {data[\"platformsProcessed\"]}')
@@ -216,6 +223,7 @@ print(f'Success Rate: {data[\"summary\"][\"successRate\"]}%')
             knowledge.json
             summary.md
             screenshots/
+            config.json
           retention-days: 30
 
       - name: Success notification
@@ -235,9 +243,9 @@ print(f'Success Rate: {data[\"summary\"][\"successRate\"]}%')
         run: |
           echo "❌ WAHAB AI SYSTEM FAILED!"
           echo ""
-          echo "🔧 Check the following:"
-          echo "1. Google Sheets permissions"
-          echo "2. Environment variables"
-          echo "3. Playwright installation"
+          echo "🔧 Check:"
+          echo "1. Google Sheet: Publish to web CSV or service account perms[web:21]"
+          echo "2. Secrets: PRIVATE_KEY base64 encoded"
+          echo "3. src/index.js logs in artifacts"
           echo ""
-          echo "📋 Debug logs available in artifacts"
+          echo "📋 Debug: Download wahab-ai-results artifact"
