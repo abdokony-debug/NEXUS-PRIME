@@ -1,0 +1,221 @@
+name: WAHAB AI Registration System
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Processing mode'
+        required: true
+        default: 'intelligent'
+        type: choice
+        options:
+          - intelligent
+          - fast
+          - stealth
+      batch_size:
+        description: 'Number of platforms to process'
+        required: true
+        default: '3'
+        type: string
+      learning_enabled:
+        description: 'Enable AI learning'
+        required: true
+        default: 'true'
+        type: boolean
+
+jobs:
+  intelligent-registration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libdbus-1-3 libxkbcommon0 libatspi2.0-0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 fonts-liberation libappindicator3-1 xdg-utils wget ca-certificates
+
+      - name: Create package.json
+        run: |
+          cat > package.json << 'EOF'
+{
+  "name": "wahab-ai-system",
+  "version": "2.0.0",
+  "main": "src/index.js",
+  "dependencies": {
+    "playwright": "^1.40.0",
+    "googleapis": "^128.0.0"
+  },
+  "scripts": {
+    "start": "node src/index.js"
+  }
+}
+EOF
+          echo "📦 package.json created"
+
+      - name: Install Node dependencies
+        run: |
+          npm install
+          npx playwright install chromium
+          echo "✅ Dependencies installed"
+
+      - name: Create directories
+        run: |
+          mkdir -p results screenshots logs src
+          echo "📁 Directories created"
+
+      - name: Load previous knowledge
+        run: |
+          if [ -f "knowledge.json" ]; then
+            echo "🧠 Loading previous AI knowledge..."
+            cp knowledge.json results/knowledge-backup.json 2>/dev/null || true
+          else
+            echo "🧠 Starting fresh AI learning..."
+          fi
+
+      - name: Create configuration file
+        run: |
+          MODE="${{ github.event.inputs.mode }}"
+          BATCH="${{ github.event.inputs.batch_size }}"
+          LEARNING="${{ github.event.inputs.learning_enabled }}"
+          RUN_ID="${{ github.run_id }}"
+          
+          cat > config.json << 'CFGEOF'
+{
+  "aiSystem": {
+    "version": "2.0.0",
+    "mode": "$MODE",
+    "batchSize": $BATCH,
+    "learningEnabled": $LEARNING,
+    "enableScreenshots": false,
+    "targetPlatforms": "",
+    "runType": "manual",
+    "runId": "$RUN_ID"
+  },
+  "settings": {
+    "maxRetries": 3,
+    "timeout": 300000,
+    "humanLikeDelays": true,
+    "minDelay": 1000,
+    "maxDelay": 5000,
+    "headless": true
+  }
+}
+CFGEOF
+          
+          echo "⚙️ Configuration created"
+          echo "Mode: $MODE"
+          echo "Batch: $BATCH"
+          echo "Learning: $LEARNING"
+
+      - name: Run AI Registration System
+        run: |
+          echo "🚀 Starting WAHAB AI Registration System"
+          
+          MODE="${{ github.event.inputs.mode }}"
+          BATCH="${{ github.event.inputs.batch_size }}"
+          LEARNING="${{ github.event.inputs.learning_enabled }}"
+          
+          echo "Mode: $MODE"
+          echo "Batch size: $BATCH"
+          echo "AI Learning: $LEARNING"
+          echo ""
+          
+          export AI_MODE="$MODE"
+          export AI_BATCH_SIZE="$BATCH"
+          export AI_LEARNING_ENABLED="$LEARNING"
+          export HUMAN_DELAYS=true
+          
+          node src/index.js
+        env:
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+          GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          NODE_ENV: production
+
+      - name: Save AI knowledge
+        run: |
+          if [ -f "knowledge.json" ]; then
+            echo "💾 Saving AI knowledge for next run..."
+            cp knowledge.json results/knowledge-saved-$(date +%s).json
+          fi
+
+      - name: Generate summary report
+        if: always()
+        run: |
+          echo "# WAHAB AI System Report" > summary.md
+          echo "" >> summary.md
+          echo "## Run Information" >> summary.md
+          echo "- **Date:** $(date)" >> summary.md
+          echo "- **Trigger:** Manual" >> summary.md
+          echo "- **Status:** ${{ job.status }}" >> summary.md
+          echo "" >> summary.md
+          echo "- **Mode:** ${{ github.event.inputs.mode }}" >> summary.md
+          echo "- **Batch Size:** ${{ github.event.inputs.batch_size }}" >> summary.md
+          echo "- **Learning:** ${{ github.event.inputs.learning_enabled }}" >> summary.md
+          
+          if ls results/report-*.json 1> /dev/null 2>&1; then
+            latest_report=$(ls -t results/report-*.json | head -1)
+            echo "" >> summary.md
+            echo "## Results" >> summary.md
+            echo '```json' >> summary.md
+            cat $latest_report | python3 -c "
+import json,sys
+data=json.load(sys.stdin)
+print('Platforms Processed: ' + str(data.get('platformsProcessed', 0)))
+print('Total Accounts Requested: ' + str(data.get('summary', {}).get('totalRequested', 0)))
+print('Total Accounts Created: ' + str(data.get('summary', {}).get('totalCreated', 0)))
+print('Total Accounts Failed: ' + str(data.get('summary', {}).get('totalFailed', 0)))
+print('Success Rate: ' + str(data.get('summary', {}).get('successRate', 0)) + '%')
+" >> summary.md
+            echo '```' >> summary.md
+          fi
+          
+          echo "" >> summary.md
+          echo "## Google Sheet" >> summary.md
+          echo "- **View Results:** https://docs.google.com/spreadsheets/d/${{ secrets.GOOGLE_SHEET_ID }}/edit" >> summary.md
+          
+          cat summary.md
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wahab-ai-results-${{ github.run_id }}
+          path: |
+            results/
+            knowledge.json
+            summary.md
+            screenshots/
+          retention-days: 30
+
+      - name: Success notification
+        if: success()
+        run: |
+          echo "🎉 WAHAB AI SYSTEM COMPLETED SUCCESSFULLY!"
+          echo ""
+          echo "📊 View results in Google Sheets:"
+          echo "https://docs.google.com/spreadsheets/d/${{ secrets.GOOGLE_SHEET_ID }}/edit"
+          echo ""
+          echo "📦 Download detailed report from artifacts"
+          echo ""
+          echo "🔁 Next run will be smarter!"
+
+      - name: Failure notification
+        if: failure()
+        run: |
+          echo "❌ WAHAB AI SYSTEM FAILED!"
+          echo ""
+          echo "🔧 Check the following:"
+          echo "1. Google Sheets permissions"
+          echo "2. Environment variables"
+          echo "3. Playwright installation"
+          echo ""
+          echo "📋 Debug logs available in artifacts"
