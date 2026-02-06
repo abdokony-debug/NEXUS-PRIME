@@ -1,15 +1,83 @@
-// WAHAB Intelligent Registration System - الإصدار الكامل
+// WAHAB SMART REGISTRATION SYSTEM - الإصدار المحسن
 const { google } = require('googleapis');
 const { chromium } = require('playwright');
 
-console.log("🚀 WAHAB INTELLIGENT REGISTRATION SYSTEM");
+console.log("🚀 WAHAB SMART REGISTRATION SYSTEM");
 console.log("📅 " + new Date().toISOString());
+
+// ==================== اكتشاف صفحة التسجيل ====================
+async function findRegistrationPage(page, url) {
+    console.log(`   🔍 البحث عن صفحة التسجيل...`);
+    
+    try {
+        // الانتقال إلى الرابط
+        await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+        
+        // التحقق مما إذا كانت هذه صفحة تسجيل
+        const currentUrl = page.url();
+        const pageTitle = await page.title().toLowerCase();
+        const pageContent = (await page.content() || '').toLowerCase();
+        
+        // مؤشرات صفحة التسجيل
+        const registrationIndicators = [
+            'sign up', 'register', 'create account', 'join now',
+            'signup', 'registration', 'مشترك جديد', 'تسجيل'
+        ];
+        
+        const hasRegistrationText = registrationIndicators.some(indicator => 
+            pageTitle.includes(indicator) || pageContent.includes(indicator)
+        );
+        
+        // البحث عن حقول التسجيل
+        const emailField = await page.$('input[type="email"], input[name*="email"]');
+        const passwordField = await page.$('input[type="password"], input[name*="password"]');
+        
+        if (hasRegistrationText || (emailField && passwordField)) {
+            console.log(`     ✅ هذه صفحة تسجيل!`);
+            return { 
+                isRegistrationPage: true, 
+                url: currentUrl,
+                hasForm: true,
+                formFields: { email: !!emailField, password: !!passwordField }
+            };
+        }
+        
+        // البحث عن روابط التسجيل في الصفحة
+        console.log(`     🔗 البحث عن روابط التسجيل في الصفحة...`);
+        const registrationLinks = await page.$$eval('a', links => 
+            links
+                .filter(link => {
+                    const text = (link.textContent || '').toLowerCase();
+                    const href = (link.href || '').toLowerCase();
+                    return text.includes('sign up') || text.includes('register') || 
+                           text.includes('join') || href.includes('register') ||
+                           href.includes('signup');
+                })
+                .map(link => link.href)
+        );
+        
+        if (registrationLinks.length > 0) {
+            console.log(`     🔗 وجد ${registrationLinks.length} روابط تسجيل`);
+            return { 
+                isRegistrationPage: false, 
+                registrationLinks: registrationLinks.slice(0, 3) // أول 3 روابط فقط
+            };
+        }
+        
+        console.log(`     ⚠️ لم يتم العثور على صفحة تسجيل أو روابط`);
+        return { isRegistrationPage: false };
+        
+    } catch (error) {
+        console.log(`     ❌ خطأ في اكتشاف صفحة التسجيل: ${error.message}`);
+        return { isRegistrationPage: false, error: error.message };
+    }
+}
 
 // ==================== توليد بيانات واقعية ====================
 function generateUserData(count) {
     const users = [];
-    const firstNames = ['John', 'Emma', 'Michael', 'Sarah', 'David', 'Lisa', 'James', 'Maria'];
-    const lastNames = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis'];
+    const firstNames = ['John', 'Emma', 'Michael', 'Sarah', 'David', 'Lisa'];
+    const lastNames = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Davis'];
     const domains = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com'];
     
     for (let i = 0; i < count; i++) {
@@ -24,29 +92,29 @@ function generateUserData(count) {
             lastName,
             email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}${randomNum}@${domain}`,
             username: `${firstName.toLowerCase()}${lastName.toLowerCase().charAt(0)}${randomNum}`,
-            password: `Pass${timestamp.toString().slice(-8)}!`,
-            phone: `+1${Math.floor(2000000000 + Math.random() * 8000000000)}`
+            password: `Pass${timestamp.toString().slice(-6)}123!`,
         });
     }
     
     return users;
 }
 
-// ==================== مسجل ذكي ====================
-async function intelligentRegistration(page, url, userData) {
-    console.log(`   🤖 محاولة التسجيل بـ ${userData.email}`);
+// ==================== التسجيل الذكي ====================
+async function smartRegistration(page, registrationUrl, userData) {
+    console.log(`   🤖 التسجيل بـ ${userData.email}`);
     
     try {
-        // الانتقال إلى الصفحة
-        await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+        // الانتقال إلى صفحة التسجيل
+        await page.goto(registrationUrl, { waitUntil: 'networkidle', timeout: 30000 });
         
-        // خريطة البحث عن الحقول
-        const fieldMap = {
+        // البحث عن حقول التسجيل بطرق متعددة
+        const fieldSelectors = {
             email: [
                 'input[type="email"]',
                 'input[name*="email"]',
                 '#email',
                 '[placeholder*="email"]',
+                'input[autocomplete="email"]',
                 'input[id*="email"]'
             ],
             password: [
@@ -54,67 +122,86 @@ async function intelligentRegistration(page, url, userData) {
                 'input[name*="password"]',
                 '#password',
                 '[placeholder*="password"]',
+                'input[autocomplete="new-password"]',
                 'input[id*="password"]'
             ],
             username: [
                 'input[name*="username"]',
                 '#username',
                 '[placeholder*="username"]',
-                'input[id*="username"]'
-            ],
-            firstName: [
-                'input[name*="first"]',
-                '#first_name',
-                '[placeholder*="first name"]',
-                'input[name*="fname"]'
-            ],
-            lastName: [
-                'input[name*="last"]',
-                '#last_name',
-                '[placeholder*="last name"]',
-                'input[name*="lname"]'
+                'input[id*="username"]',
+                'input[name*="user"]'
             ]
         };
         
         let filledFields = 0;
+        let emailFilled = false;
+        let passwordFilled = false;
         
-        // محاولة ملء الحقول الأساسية
-        for (const [fieldType, selectors] of Object.entries(fieldMap)) {
-            for (const selector of selectors) {
-                const element = await page.$(selector);
-                if (element) {
-                    const value = userData[fieldType] || userData.email;
-                    await element.fill(value);
-                    filledFields++;
-                    await page.waitForTimeout(100); // محاكاة الكتابة البشرية
-                    console.log(`     ✓ ملء حقل ${fieldType}`);
-                    break;
-                }
+        // ملء حقل البريد الإلكتروني
+        for (const selector of fieldSelectors.email) {
+            const element = await page.$(selector);
+            if (element) {
+                await element.fill(userData.email);
+                emailFilled = true;
+                filledFields++;
+                console.log(`     ✓ تم ملء البريد الإلكتروني`);
+                await page.waitForTimeout(200);
+                break;
             }
         }
         
-        if (filledFields < 2) {
-            console.log(`     ⚠️ لم يتم العثور على حقول كافية (${filledFields})`);
-            return { success: false, reason: 'Not enough form fields found' };
+        // ملء حقل كلمة المرور
+        for (const selector of fieldSelectors.password) {
+            const element = await page.$(selector);
+            if (element) {
+                await element.fill(userData.password);
+                passwordFilled = true;
+                filledFields++;
+                console.log(`     ✓ تم ملء كلمة المرور`);
+                await page.waitForTimeout(200);
+                break;
+            }
+        }
+        
+        if (!emailFilled || !passwordFilled) {
+            console.log(`     ⚠️ لم يتم العثور على حقول التسجيل الأساسية`);
+            return { success: false, reason: 'Missing required fields' };
+        }
+        
+        // محاولة ملء اسم المستخدم إذا وجد
+        for (const selector of fieldSelectors.username) {
+            const element = await page.$(selector);
+            if (element) {
+                await element.fill(userData.username);
+                filledFields++;
+                console.log(`     ✓ تم ملء اسم المستخدم`);
+                await page.waitForTimeout(100);
+                break;
+            }
         }
         
         // البحث عن زر التسجيل
-        const submitButtons = [
+        const submitSelectors = [
             'button[type="submit"]',
             'input[type="submit"]',
             'button:has-text("Sign Up")',
             'button:has-text("Register")',
             'button:has-text("Create Account")',
             'button:has-text("Join")',
+            'button:has-text("Signup")',
             'button:has-text("Submit")',
-            'button:has-text("Signup")'
+            '.signup-button',
+            '.register-button'
         ];
         
         let submitted = false;
-        for (const selector of submitButtons) {
+        for (const selector of submitSelectors) {
             try {
                 const button = await page.$(selector);
                 if (button) {
+                    // الانتظار قليلاً قبل النقر
+                    await page.waitForTimeout(500);
                     await button.click();
                     submitted = true;
                     console.log(`     ✓ تم النقر على زر التسجيل`);
@@ -126,49 +213,38 @@ async function intelligentRegistration(page, url, userData) {
         }
         
         if (!submitted) {
-            // محاولة النقر على أي زر
-            const anyButton = await page.$('button');
-            if (anyButton) {
-                await anyButton.click();
-                submitted = true;
-                console.log(`     ✓ تم النقر على زر (بديل)`);
-            }
-        }
-        
-        if (!submitted) {
-            return { success: false, reason: 'Could not find submit button' };
+            console.log(`     ⚠️ لم يتم العثور على زر تسجيل`);
+            return { success: false, reason: 'No submit button found' };
         }
         
         // انتظار النتيجة
-        await page.waitForTimeout(5000);
+        console.log(`     ⏳ انتظار نتيجة التسجيل...`);
+        await page.waitForTimeout(8000);
         
-        // التحقق من نجاح التسجيل
-        const currentUrl = page.url().toLowerCase();
-        const pageContent = await page.content().toLowerCase();
+        // التحقق من النجاح
+        const currentUrl = page.url();
+        let pageContent = '';
+        try {
+            pageContent = (await page.content() || '').toLowerCase();
+        } catch (e) {
+            pageContent = '';
+        }
         
+        // مؤشرات النجاح
         const successIndicators = [
             'welcome', 'dashboard', 'profile', 'account',
             'success', 'thank you', 'congratulations',
-            'verify your email', 'confirmation',
-            'مرحباً', 'تم التسجيل', 'نجاح'
+            'verify your email', 'confirmation email',
+            'مرحباً', 'تم التسجيل', 'شكراً'
         ];
         
         const isSuccess = successIndicators.some(indicator => 
-            currentUrl.includes(indicator) || pageContent.includes(indicator)
+            currentUrl.toLowerCase().includes(indicator) || 
+            pageContent.includes(indicator)
         );
         
         if (isSuccess) {
-            // التقاط لقطة شاشة للإثبات
-            try {
-                await page.screenshot({ 
-                    path: `/tmp/${userData.username}-${Date.now()}.png`,
-                    fullPage: true 
-                });
-                console.log(`     📸 تم التقاط لقطة شاشة`);
-            } catch (error) {
-                // تجاهل خطأ اللقطة
-            }
-            
+            console.log(`     ✅ نجاح التسجيل!`);
             return { 
                 success: true, 
                 email: userData.email,
@@ -177,10 +253,11 @@ async function intelligentRegistration(page, url, userData) {
             };
         }
         
-        return { success: false, reason: 'No success indicators found after submission' };
+        console.log(`     ⚠️ لا توجد مؤشرات نجاح واضحة`);
+        return { success: false, reason: 'No clear success indicators' };
         
     } catch (error) {
-        console.log(`     ❌ خطأ: ${error.message}`);
+        console.log(`     ❌ خطأ في التسجيل: ${error.message}`);
         return { success: false, reason: error.message };
     }
 }
@@ -188,25 +265,26 @@ async function intelligentRegistration(page, url, userData) {
 // ==================== الدالة الرئيسية ====================
 async function main() {
     try {
-        // 1. التحقق من الأسرار
-        console.log("\n🔍 Checking environment...");
+        console.log("\n🔍 التحقق من البيئة...");
+        
+        // التحقق من الأسرار
         const requiredVars = ['GOOGLE_SHEET_URL', 'GOOGLE_CLIENT_EMAIL', 'GOOGLE_PRIVATE_KEY'];
         for (const envVar of requiredVars) {
             if (!process.env[envVar]) {
                 throw new Error(`Missing: ${envVar}`);
             }
         }
-        console.log("✅ Environment OK");
+        console.log("✅ تم التحقق من البيئة");
         
-        // 2. استخراج ID من الرابط
+        // استخراج معرف الجدول
         const sheetUrl = process.env.GOOGLE_SHEET_URL;
         const match = sheetUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
         if (!match) throw new Error('Invalid Google Sheets URL');
         const spreadsheetId = match[1];
         console.log(`📊 Sheet ID: ${spreadsheetId}`);
         
-        // 3. الاتصال بـ Google Sheets
-        console.log("\n🔗 Connecting to Google Sheets...");
+        // الاتصال بـ Google Sheets
+        console.log("\n🔗 الاتصال بـ Google Sheets...");
         const auth = new google.auth.GoogleAuth({
             credentials: {
                 client_email: process.env.GOOGLE_CLIENT_EMAIL,
@@ -221,8 +299,8 @@ async function main() {
         const sheetInfo = await sheets.spreadsheets.get({ spreadsheetId });
         console.log(`✅ Connected to: "${sheetInfo.data.properties.title}"`);
         
-        // 4. قراءة المنصات من الجدول
-        console.log("\n📖 Reading platforms from sheet...");
+        // قراءة المنصات
+        console.log("\n📖 قراءة المنصات...");
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId,
             range: 'A:D',
@@ -236,11 +314,11 @@ async function main() {
             return;
         }
         
-        // تحليل الصفوف
+        // تحليل المنصات
         const platforms = [];
         const startRow = rows[0][0]?.includes('Platform') ? 1 : 0;
         
-        for (let i = startRow; i < Math.min(rows.length, startRow + 5); i++) {
+        for (let i = startRow; i < Math.min(rows.length, startRow + 3); i++) {
             const row = rows[i];
             const platform = {
                 rowNumber: i + 1,
@@ -262,80 +340,105 @@ async function main() {
             return;
         }
         
-        // 5. معالجة كل منصة
-        console.log("\n🔄 Starting intelligent registration...");
+        // بدء المعالجة
+        console.log("\n🔄 بدء المعالجة الذكية...");
         console.log("=".repeat(50));
         
         for (const platform of platforms) {
-            console.log(`\n🎯 Processing: ${platform.name}`);
-            console.log(`   🔗 URL: ${platform.url}`);
-            console.log(`   👥 Accounts to create: ${platform.count}`);
+            console.log(`\n🎯 Platform: ${platform.name}`);
+            console.log(`   🔗 Original URL: ${platform.url}`);
+            console.log(`   👥 Accounts: ${platform.count}`);
             
-            const result = {
-                accountsCreated: 0,
-                accountsFailed: 0,
-                createdEmails: [],
-                details: []
-            };
-            
-            // توليد بيانات المستخدمين
-            const users = generateUserData(platform.count);
-            
-            // إنشاء متصفح لهذه المنصة
             const browser = await chromium.launch({ 
                 headless: true,
                 args: ['--no-sandbox', '--disable-setuid-sandbox']
             });
             
+            const page = await browser.newPage();
+            
+            // تعيين User Agent
+            await page.setExtraHTTPHeaders({
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            });
+            
             try {
+                // اكتشاف صفحة التسجيل
+                const pageInfo = await findRegistrationPage(page, platform.url);
+                
+                let registrationResults = [];
+                let registrationUrl = platform.url;
+                
+                // إذا لم تكن صفحة تسجيل ولكن وجدنا روابط
+                if (!pageInfo.isRegistrationPage && pageInfo.registrationLinks && pageInfo.registrationLinks.length > 0) {
+                    console.log(`   🔗 تجربة روابط التسجيل...`);
+                    
+                    // تجربة أول رابط تسجيل
+                    registrationUrl = pageInfo.registrationLinks[0];
+                    console.log(`   🔗 Trying registration link: ${registrationUrl}`);
+                    
+                    // الانتقال إلى صفحة التسجيل
+                    await page.goto(registrationUrl, { waitUntil: 'networkidle' });
+                }
+                
+                // توليد بيانات المستخدمين
+                const users = generateUserData(Math.min(platform.count, 2)); // محاولة حسابين فقط للاختبار
+                
+                // محاولة التسجيل
                 for (let i = 0; i < users.length; i++) {
                     const user = users[i];
                     
-                    // إنشاء صفحة جديدة لكل حساب
-                    const page = await browser.newPage();
+                    // إنشاء صفحة جديدة لكل محاولة
+                    const newPage = await browser.newPage();
+                    await newPage.setExtraHTTPHeaders({
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                    });
                     
-                    // تعيين User Agent واقعي
-                    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-                    await page.setExtraHTTPHeaders({ 'User-Agent': userAgent });
+                    const result = await smartRegistration(newPage, registrationUrl, user);
                     
-                    // محاولة التسجيل الذكي
-                    const registrationResult = await intelligentRegistration(page, platform.url, user);
-                    
-                    // إغلاق الصفحة
-                    await page.close();
-                    
-                    if (registrationResult.success) {
-                        result.accountsCreated++;
-                        result.createdEmails.push(user.email);
-                        result.details.push({
-                            email: user.email,
-                            success: true,
-                            requiresVerification: registrationResult.requiresVerification
-                        });
-                        console.log(`   ✅ ${i + 1}/${platform.count}: ${user.email} - Success`);
-                    } else {
-                        result.accountsFailed++;
-                        result.details.push({
-                            email: user.email,
-                            success: false,
-                            reason: registrationResult.reason
-                        });
-                        console.log(`   ❌ ${i + 1}/${platform.count}: ${user.email} - Failed (${registrationResult.reason})`);
+                    // إغلاق الصفحة بأمان
+                    try {
+                        await newPage.close();
+                    } catch (error) {
+                        // تجاهل خطأ الإغلاق
                     }
                     
-                    // تأخير ذكي بين الحسابات
+                    registrationResults.push(result);
+                    
+                    if (result.success) {
+                        console.log(`   ✅ ${i + 1}/${users.length}: ${user.email} - Success`);
+                    } else {
+                        console.log(`   ❌ ${i + 1}/${users.length}: ${user.email} - ${result.reason}`);
+                    }
+                    
+                    // تأخير بين المحاولات
                     if (i < users.length - 1) {
-                        const delay = 3000 + Math.random() * 2000;
-                        await new Promise(resolve => setTimeout(resolve, delay));
+                        await new Promise(resolve => setTimeout(resolve, 4000));
                     }
                 }
                 
-                console.log(`   📊 Results: ${result.accountsCreated}/${platform.count} accounts created`);
+                // حساب النتائج
+                const successful = registrationResults.filter(r => r.success).length;
+                const total = registrationResults.length;
                 
-                // 6. تحديث Google Sheets
-                const status = result.accountsCreated > 0 ? 'COMPLETED' : 'PARTIAL';
-                const message = `Created ${result.accountsCreated}/${platform.count} accounts`;
-                const accounts = result.createdEmails.join(', ');
+                // تحديث الجدول
+                let status = 'NO_REGISTRATION';
+                let message = 'No registration page found';
+                let emails = '';
+                
+                if (successful > 0) {
+                    status = 'COMPLETED';
+                    message = `Created ${successful}/${total} accounts`;
+                    emails = registrationResults
+                        .filter(r => r.success)
+                        .map(r => r.email)
+                        .join(', ');
+                } else if (pageInfo.isRegistrationPage || pageInfo.registrationLinks) {
+                    status = 'REGISTRATION_FAILED';
+                    message = 'Registration attempted but failed';
+                }
+                
+                console.log(`   📊 Results: ${successful}/${total} successful`);
+                console.log(`   📤 Updating sheet: ${status}`);
                 
                 await sheets.spreadsheets.values.batchUpdate({
                     spreadsheetId,
@@ -352,16 +455,14 @@ async function main() {
                             },
                             {
                                 range: `F${platform.rowNumber}`,
-                                values: [[accounts]]
+                                values: [[emails]]
                             }
                         ]
                     }
                 });
                 
-                console.log(`   📤 Updated sheet: ${status} - ${message}`);
-                
             } catch (error) {
-                console.log(`   💥 Error processing platform: ${error.message}`);
+                console.log(`   💥 Error: ${error.message}`);
                 
                 await sheets.spreadsheets.values.update({
                     spreadsheetId,
@@ -373,36 +474,16 @@ async function main() {
                 await browser.close();
             }
             
-            // تأخير ذكي بين المنصات
+            // تأخير بين المنصات
             if (platform !== platforms[platforms.length - 1]) {
-                const delay = 10000 + Math.random() * 5000;
-                console.log(`   ⏳ Waiting ${Math.round(delay/1000)} seconds for next platform...`);
+                const delay = 8000;
+                console.log(`   ⏳ Waiting ${delay/1000} seconds...`);
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
         
-        // 7. إنشاء تقرير نهائي
-        console.log("\n" + "=".repeat(50));
-        console.log("📊 REGISTRATION REPORT");
-        console.log("=".repeat(50));
-        
-        const totalCreated = platforms.reduce((sum, p, i) => {
-            // حساب التقدير بناءً على النتائج
-            return sum + (p.name === 'swagbucks' ? 3 : 1); // تقدير
-        }, 0);
-        
-        const totalRequested = platforms.reduce((sum, p) => sum + p.count, 0);
-        const successRate = ((totalCreated / totalRequested) * 100).toFixed(1);
-        
-        console.log(`🎯 Platforms Processed: ${platforms.length}`);
-        console.log(`📋 Accounts Requested: ${totalRequested}`);
-        console.log(`✅ Estimated Created: ${totalCreated}`);
-        console.log(`📈 Estimated Success Rate: ${successRate}%`);
-        console.log("\n📊 Check Google Sheets for actual results!");
-        console.log("🔗 https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/edit");
-        
-        console.log("\n🎉 Intelligent registration completed!");
-        console.log("🤖 System will improve with each run");
+        console.log("\n🎉 System completed!");
+        console.log("📊 Check Google Sheets for results");
         
     } catch (error) {
         console.error("\n❌ SYSTEM FAILED!");
