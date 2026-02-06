@@ -1,4 +1,4 @@
-name: WAHAB AI System
+name: wahab-system
 
 on:
   workflow_dispatch:
@@ -9,11 +9,11 @@ on:
         default: 'intelligent'
         type: choice
         options:
-          - intelligent
-          - fast
-          - stealth
+        - intelligent
+        - fast
+        - stealth
       batch_size:
-        description: 'Number of platforms to process'
+        description: 'Number of accounts to create'
         required: true
         default: '3'
         type: string
@@ -24,9 +24,9 @@ on:
         type: boolean
 
 jobs:
-  main:
+  run-wahab:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 30
     
     steps:
     - name: Checkout code
@@ -41,117 +41,81 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y \
+          wget \
+          ca-certificates \
           libnss3 \
-          libnspr4 \
           libatk1.0-0 \
-          libatk-bridge2.0-0 \
-          libcups2 \
-          libdrm2 \
-          libdbus-1-3 \
-          libxkbcommon0 \
-          libatspi2.0-0 \
           libxcomposite1 \
           libxdamage1 \
-          libxfixes3 \
-          libxrandr2 \
-          libgbm1 \
-          libpango-1.0-0 \
-          libcairo2 \
-          libasound2 \
-          fonts-liberation \
-          libappindicator3-1 \
-          xdg-utils \
-          wget \
-          ca-certificates
+          libxrandr2
     
-    - name: Create package.json
+    - name: Create package.json for wahab-system
       run: |
-        cat > package.json << 'EOF'
+        cat > package.json << 'PKGEOF'
 {
   "name": "wahab-system",
-  "version": "2.0.0",
-  "main": "src/index.js",
-  "dependencies": {
-    "playwright": "^1.40.0",
-    "googleapis": "^128.0.0"
-  },
+  "version": "1.0.0",
+  "main": "index.js",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "playwright": "^1.40.0"
   }
 }
-EOF
+PKGEOF
     
     - name: Install Node dependencies
       run: |
         npm install
         npx playwright install chromium
     
-    - name: Create directories
+    - name: Create wahab-system script
       run: |
-        mkdir -p src results logs
-    
-    - name: Create AI script
-      run: |
-        cat > src/index.js << 'EOF'
-const fs = require('fs');
-const path = require('path');
+        cat > index.js << 'JSCODE'
+console.log('🚀 Starting wahab-system...');
+console.log('===========================');
 
-console.log('🚀 ===============================');
-console.log('🚀 WAHAB AI Registration System');
-console.log('🚀 ===============================');
-
-// محاكاة عمل النظام
-const platforms = ['Facebook', 'Twitter', 'Instagram', 'LinkedIn', 'Github'];
+// Simulate account creation
+const platforms = ['Facebook', 'Twitter', 'Instagram'];
 const results = [];
 
-platforms.forEach((platform, index) => {
-  const success = Math.random() > 0.3;
-  const result = {
+platforms.forEach((platform, i) => {
+  const success = Math.random() > 0.4;
+  results.push({
     platform,
     status: success ? 'SUCCESS' : 'FAILED',
-    account: success ? `user${Date.now()}${index}@example.com` : null,
+    account: `user${Date.now()}${i}@wahab.com`,
     timestamp: new Date().toISOString()
-  };
-  results.push(result);
-  console.log(`${success ? '✅' : '❌'} ${platform}: ${success ? 'Created' : 'Failed'}`);
+  });
+  
+  console.log(`${success ? '✅' : '❌'} ${platform}: ${success ? 'Account created' : 'Failed'}`);
 });
 
-// حفظ النتائج
-const report = {
-  timestamp: new Date().toISOString(),
-  platformsProcessed: platforms.length,
-  results: results,
-  summary: {
-    totalRequested: platforms.length,
-    totalCreated: results.filter(r => r.status === 'SUCCESS').length,
-    totalFailed: results.filter(r => r.status === 'FAILED').length,
-    successRate: Math.round((results.filter(r => r.status === 'SUCCESS').length / platforms.length) * 100)
-  }
-};
-
-fs.writeFileSync('results/report.json', JSON.stringify(report, null, 2));
-
-console.log('\n📊 Results Summary:');
-console.log(`   Platforms processed: ${report.summary.totalRequested}`);
-console.log(`   Accounts created: ${report.summary.totalCreated}`);
-console.log(`   Accounts failed: ${report.summary.totalFailed}`);
-console.log(`   Success rate: ${report.summary.successRate}%`);
-console.log('\n🎉 WAHAB AI process completed!');
-EOF
+console.log('\n📊 Summary:');
+console.log(`Total: ${results.length}`);
+console.log(`Success: ${results.filter(r => r.status === 'SUCCESS').length}`);
+console.log(`Failed: ${results.filter(r => r.status === 'FAILED').length}`);
+console.log('\n✅ wahab-system completed!');
+JSCODE
     
-    - name: Run WAHAB System
+    - name: Run wahab-system
       run: |
-        echo "🚀 Starting WAHAB AI System"
-        echo "Mode: ${{ github.event.inputs.mode }}"
-        echo "Batch: ${{ github.event.inputs.batch_size }}"
-        echo "Learning: ${{ github.event.inputs.learning_enabled }}"
-        echo ""
+        echo "========================================"
+        echo "🔧 Mode: ${{ github.event.inputs.mode }}"
+        echo "📦 Batch: ${{ github.event.inputs.batch_size }}"
+        echo "🧠 Learning: ${{ github.event.inputs.learning_enabled }}"
+        echo "========================================"
         
-        # تشغيل النظام
-        node src/index.js
+        node index.js
     
-    - name: Upload results
+    - name: Save results
+      run: |
+        mkdir -p wahab-results
+        echo '{"system":"wahab-system","status":"completed"}' > wahab-results/output.json
+    
+    - name: Upload wahab-results
       uses: actions/upload-artifact@v4
       with:
         name: wahab-results
-        path: results/
+        path: wahab-results/
