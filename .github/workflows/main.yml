@@ -1,6 +1,5 @@
 name: WAHAB AI Registration System
 on: 
-  # ✅ التشغيل اليدوي فقط مع خيارات
   workflow_dispatch:
     inputs:
       mode:
@@ -31,18 +30,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Determine parameters
-        id: params
-        run: |
-          echo "🏃 RUN TYPE: Manual"
-          echo "MODE: ${{ github.event.inputs.mode }}"
-          echo "BATCH: ${{ github.event.inputs.batch_size }}"
-          echo "LEARNING: ${{ github.event.inputs.learning_enabled }}"
-          
-          echo "mode=${{ github.event.inputs.mode }}" >> $GITHUB_OUTPUT
-          echo "batch=${{ github.event.inputs.batch_size }}" >> $GITHUB_OUTPUT
-          echo "learning=${{ github.event.inputs.learning_enabled }}" >> $GITHUB_OUTPUT
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -117,13 +104,13 @@ jobs:
 
       - name: Create configuration file
         run: |
-          cat > config.json << EOF
+          cat > config.json << 'EOF'
           {
             "aiSystem": {
               "version": "2.0.0",
-              "mode": "${{ steps.params.outputs.mode }}",
-              "batchSize": ${{ steps.params.outputs.batch }},
-              "learningEnabled": ${{ steps.params.outputs.learning }},
+              "mode": "${{ github.event.inputs.mode }}",
+              "batchSize": ${{ github.event.inputs.batch_size }},
+              "learningEnabled": ${{ github.event.inputs.learning_enabled }},
               "enableScreenshots": false,
               "targetPlatforms": "",
               "runType": "manual",
@@ -141,39 +128,38 @@ jobs:
           EOF
           
           echo "⚙️ Configuration created"
-          cat config.json
 
       - name: Run AI Registration System
         run: |
-          echo "🚀 Launching WAHAB AI Registration System..."
-          echo "============================================"
+          echo "🚀 Starting WAHAB AI Registration System"
           
-          # تصدير متغيرات البيئة
-          export AI_MODE="${{ steps.params.outputs.mode }}"
-          export AI_BATCH_SIZE="${{ steps.params.outputs.batch }}"
-          export AI_LEARNING_ENABLED="${{ steps.params.outputs.learning }}"
+          MODE="${{ github.event.inputs.mode }}"
+          BATCH="${{ github.event.inputs.batch_size }}"
+          LEARNING="${{ github.event.inputs.learning_enabled }}"
+          
+          echo "Mode: $MODE"
+          echo "Batch size: $BATCH"
+          echo "AI Learning: $LEARNING"
+          echo ""
+          
+          export AI_MODE="$MODE"
+          export AI_BATCH_SIZE="$BATCH"
+          export AI_LEARNING_ENABLED="$LEARNING"
           export HUMAN_DELAYS=true
           
-          echo "🕒 Start time: $(date)"
-          echo "🔧 Mode: $AI_MODE"
-          echo "📦 Batch size: $AI_BATCH_SIZE"
-          echo "🧠 Learning enabled: $AI_LEARNING_ENABLED"
-          echo "============================================"
-          
-          # تشغيل النظام
           node src/index.js
-          
-          echo "============================================"
-          echo "🕒 End time: $(date)"
-          echo "✅ AI System execution completed"
+        env:
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+          GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          NODE_ENV: production
 
       - name: Save AI knowledge
-        if: always()
         run: |
           if [ -f "knowledge.json" ]; then
             echo "💾 Saving AI knowledge for next run..."
-            TIMESTAMP=$(date +%s)
-            cp knowledge.json results/knowledge-saved-$TIMESTAMP.json
+            cp knowledge.json results/knowledge-saved-$(date +%s).json
           fi
 
       - name: Generate summary report
@@ -223,7 +209,6 @@ print(f'Success Rate: {data[\"summary\"][\"successRate\"]}%')
             knowledge.json
             summary.md
             screenshots/
-            logs/
           retention-days: 30
 
       - name: Success notification
