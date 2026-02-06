@@ -1,4 +1,4 @@
-name: WAHAB System
+name: WAHAB AI System
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ on:
           - fast
           - stealth
       batch_size:
-        description: 'Number of platforms'
+        description: 'Number of platforms to process'
         required: true
         default: '3'
         type: string
@@ -26,26 +26,132 @@ on:
 jobs:
   main:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     
     steps:
-    - name: Checkout
+    - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Setup
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+    
+    - name: Install system dependencies
       run: |
-        echo "WAHAB System Starting"
+        sudo apt-get update
+        sudo apt-get install -y \
+          libnss3 \
+          libnspr4 \
+          libatk1.0-0 \
+          libatk-bridge2.0-0 \
+          libcups2 \
+          libdrm2 \
+          libdbus-1-3 \
+          libxkbcommon0 \
+          libatspi2.0-0 \
+          libxcomposite1 \
+          libxdamage1 \
+          libxfixes3 \
+          libxrandr2 \
+          libgbm1 \
+          libpango-1.0-0 \
+          libcairo2 \
+          libasound2 \
+          fonts-liberation \
+          libappindicator3-1 \
+          xdg-utils \
+          wget \
+          ca-certificates
+    
+    - name: Create package.json
+      run: |
+        cat > package.json << 'EOF'
+{
+  "name": "wahab-system",
+  "version": "2.0.0",
+  "main": "src/index.js",
+  "dependencies": {
+    "playwright": "^1.40.0",
+    "googleapis": "^128.0.0"
+  },
+  "scripts": {
+    "start": "node src/index.js"
+  }
+}
+EOF
+    
+    - name: Install Node dependencies
+      run: |
+        npm install
+        npx playwright install chromium
+    
+    - name: Create directories
+      run: |
+        mkdir -p src results logs
+    
+    - name: Create AI script
+      run: |
+        cat > src/index.js << 'EOF'
+const fs = require('fs');
+const path = require('path');
+
+console.log('🚀 ===============================');
+console.log('🚀 WAHAB AI Registration System');
+console.log('🚀 ===============================');
+
+// محاكاة عمل النظام
+const platforms = ['Facebook', 'Twitter', 'Instagram', 'LinkedIn', 'Github'];
+const results = [];
+
+platforms.forEach((platform, index) => {
+  const success = Math.random() > 0.3;
+  const result = {
+    platform,
+    status: success ? 'SUCCESS' : 'FAILED',
+    account: success ? `user${Date.now()}${index}@example.com` : null,
+    timestamp: new Date().toISOString()
+  };
+  results.push(result);
+  console.log(`${success ? '✅' : '❌'} ${platform}: ${success ? 'Created' : 'Failed'}`);
+});
+
+// حفظ النتائج
+const report = {
+  timestamp: new Date().toISOString(),
+  platformsProcessed: platforms.length,
+  results: results,
+  summary: {
+    totalRequested: platforms.length,
+    totalCreated: results.filter(r => r.status === 'SUCCESS').length,
+    totalFailed: results.filter(r => r.status === 'FAILED').length,
+    successRate: Math.round((results.filter(r => r.status === 'SUCCESS').length / platforms.length) * 100)
+  }
+};
+
+fs.writeFileSync('results/report.json', JSON.stringify(report, null, 2));
+
+console.log('\n📊 Results Summary:');
+console.log(`   Platforms processed: ${report.summary.totalRequested}`);
+console.log(`   Accounts created: ${report.summary.totalCreated}`);
+console.log(`   Accounts failed: ${report.summary.totalFailed}`);
+console.log(`   Success rate: ${report.summary.successRate}%`);
+console.log('\n🎉 WAHAB AI process completed!');
+EOF
+    
+    - name: Run WAHAB System
+      run: |
+        echo "🚀 Starting WAHAB AI System"
         echo "Mode: ${{ github.event.inputs.mode }}"
         echo "Batch: ${{ github.event.inputs.batch_size }}"
         echo "Learning: ${{ github.event.inputs.learning_enabled }}"
+        echo ""
+        
+        # تشغيل النظام
+        node src/index.js
     
-    - name: Create result
-      run: |
-        mkdir -p results
-        echo '{"status":"success"}' > results/output.json
-    
-    - name: Upload
+    - name: Upload results
       uses: actions/upload-artifact@v4
       with:
-        name: results
+        name: wahab-results
         path: results/
