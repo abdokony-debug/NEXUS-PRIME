@@ -1,6 +1,6 @@
 name: WAHAB AI Registration System
 on: 
-  # ✅ التشغيل اليدوي مع خيارات
+  # ✅ التشغيل اليدوي فقط مع خيارات
   workflow_dispatch:
     inputs:
       mode:
@@ -23,10 +23,6 @@ on:
         default: 'true'
         type: boolean
 
-  # ✅ تشغيل مجدول (اختياري - كل 6 ساعات)
-  schedule:
-    - cron: '0 */6 * * *'
-
 jobs:
   intelligent-registration:
     runs-on: ubuntu-22.04
@@ -36,31 +32,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Determine run type
-        id: determine_params
+      - name: Determine parameters
+        id: params
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "🏃 RUN TYPE: Manual"
-            echo "MODE: ${{ github.event.inputs.mode }}"
-            echo "BATCH: ${{ github.event.inputs.batch_size }}"
-            echo "mode=${{ github.event.inputs.mode }}" >> $GITHUB_OUTPUT
-            echo "batch=${{ github.event.inputs.batch_size }}" >> $GITHUB_OUTPUT
-            echo "learning=${{ github.event.inputs.learning_enabled }}" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.event_name }}" == "push" ]]; then
-            echo "🏃 RUN TYPE: Automatic (Push to main)"
-            echo "MODE: intelligent"
-            echo "BATCH: 3"
-            echo "mode=intelligent" >> $GITHUB_OUTPUT
-            echo "batch=3" >> $GITHUB_OUTPUT
-            echo "learning=true" >> $GITHUB_OUTPUT
-          else
-            echo "🏃 RUN TYPE: Scheduled"
-            echo "MODE: fast"
-            echo "BATCH: 2"
-            echo "mode=fast" >> $GITHUB_OUTPUT
-            echo "batch=2" >> $GITHUB_OUTPUT
-            echo "learning=true" >> $GITHUB_OUTPUT
-          fi
+          echo "🏃 RUN TYPE: Manual"
+          echo "MODE: ${{ github.event.inputs.mode }}"
+          echo "BATCH: ${{ github.event.inputs.batch_size }}"
+          echo "LEARNING: ${{ github.event.inputs.learning_enabled }}"
+          
+          echo "mode=${{ github.event.inputs.mode }}" >> $GITHUB_OUTPUT
+          echo "batch=${{ github.event.inputs.batch_size }}" >> $GITHUB_OUTPUT
+          echo "learning=${{ github.event.inputs.learning_enabled }}" >> $GITHUB_OUTPUT
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -92,8 +74,7 @@ jobs:
             libappindicator3-1 \
             xdg-utils \
             wget \
-            ca-certificates \
-            jq
+            ca-certificates
 
       - name: Create package.json
         run: |
@@ -140,12 +121,12 @@ jobs:
           {
             "aiSystem": {
               "version": "2.0.0",
-              "mode": "${{ steps.determine_params.outputs.mode }}",
-              "batchSize": ${{ steps.determine_params.outputs.batch }},
-              "learningEnabled": ${{ steps.determine_params.outputs.learning }},
+              "mode": "${{ steps.params.outputs.mode }}",
+              "batchSize": ${{ steps.params.outputs.batch }},
+              "learningEnabled": ${{ steps.params.outputs.learning }},
               "enableScreenshots": false,
               "targetPlatforms": "",
-              "runType": "${{ github.event_name }}",
+              "runType": "manual",
               "runId": "${{ github.run_id }}"
             },
             "settings": {
@@ -163,15 +144,14 @@ jobs:
           cat config.json
 
       - name: Run AI Registration System
-        id: run_ai
         run: |
           echo "🚀 Launching WAHAB AI Registration System..."
           echo "============================================"
           
           # تصدير متغيرات البيئة
-          export AI_MODE="${{ steps.determine_params.outputs.mode }}"
-          export AI_BATCH_SIZE="${{ steps.determine_params.outputs.batch }}"
-          export AI_LEARNING_ENABLED="${{ steps.determine_params.outputs.learning }}"
+          export AI_MODE="${{ steps.params.outputs.mode }}"
+          export AI_BATCH_SIZE="${{ steps.params.outputs.batch }}"
+          export AI_LEARNING_ENABLED="${{ steps.params.outputs.learning }}"
           export HUMAN_DELAYS=true
           
           echo "🕒 Start time: $(date)"
@@ -188,6 +168,7 @@ jobs:
           echo "✅ AI System execution completed"
 
       - name: Save AI knowledge
+        if: always()
         run: |
           if [ -f "knowledge.json" ]; then
             echo "💾 Saving AI knowledge for next run..."
@@ -202,15 +183,12 @@ jobs:
           echo "" >> summary.md
           echo "## Run Information" >> summary.md
           echo "- **Date:** $(date)" >> summary.md
-          echo "- **Trigger:** ${{ github.event_name }}" >> summary.md
+          echo "- **Trigger:** Manual" >> summary.md
           echo "- **Status:** ${{ job.status }}" >> summary.md
           echo "" >> summary.md
-          
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "- **Mode:** ${{ github.event.inputs.mode }}" >> summary.md
-            echo "- **Batch Size:** ${{ github.event.inputs.batch_size }}" >> summary.md
-            echo "- **Learning:** ${{ github.event.inputs.learning_enabled }}" >> summary.md
-          fi
+          echo "- **Mode:** ${{ github.event.inputs.mode }}" >> summary.md
+          echo "- **Batch Size:** ${{ github.event.inputs.batch_size }}" >> summary.md
+          echo "- **Learning:** ${{ github.event.inputs.learning_enabled }}" >> summary.md
           
           if ls results/report-*.json 1> /dev/null 2>&1; then
             latest_report=$(ls -t results/report-*.json | head -1)
