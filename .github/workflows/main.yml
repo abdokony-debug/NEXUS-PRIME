@@ -104,22 +104,13 @@ jobs:
           echo "screenshots=$SCREENSHOTS" >> $GITHUB_OUTPUT
           echo "target_platforms=$TARGET_PLATFORMS" >> $GITHUB_OUTPUT
           
-          # إنشاء ملف للمعاملات
-          cat > .run-params << EOF
-          MODE=$MODE
-          BATCH_SIZE=$BATCH
-          LEARNING_ENABLED=$LEARNING
-          ENABLE_SCREENSHOTS=$SCREENSHOTS
-          TARGET_PLATFORMS=$TARGET_PLATFORMS
-          RUN_TYPE=${{ github.event_name }}
-          RUN_ID=${{ github.run_id }}
-          EOF
+          # إنشاء مجلد النتائج مبكراً
+          mkdir -p results screenshots logs
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          cache: 'npm'
+          node-version: '18.x'
 
       - name: Install system dependencies
         run: |
@@ -147,12 +138,16 @@ jobs:
             xdg-utils \
             wget \
             ca-certificates \
-            jq  # لإدارة JSON
+            jq
           
           echo "✅ System dependencies installed"
 
-      - name: Create package.json
+      - name: Create initial files and directories
         run: |
+          # إنشاء جميع المجلدات المطلوبة
+          mkdir -p results screenshots logs src
+          
+          # إنشاء package.json
           cat > package.json << 'EOF'
           {
             "name": "wahab-ai-system",
@@ -168,35 +163,32 @@ jobs:
             "scripts": {
               "start": "node src/index.js",
               "test": "echo \"No tests specified\" && exit 0"
-            },
-            "keywords": ["ai", "automation", "registration"],
-            "author": "WAHAB AI System",
-            "license": "MIT"
+            }
           }
           EOF
           
-          echo "📦 package.json created successfully"
+          # إنشاء ملف معرفة AI فارغ إذا لم يكن موجوداً
+          if [ ! -f "knowledge.json" ]; then
+            echo '{"platforms": {}, "successPatterns": [], "failurePatterns": []}' > knowledge.json
+          fi
+          
+          echo "📁 Files and directories created"
 
       - name: Install Node dependencies
         run: |
-          npm ci --no-audit --progress=false
+          npm install --no-audit --progress=false
           npx playwright install chromium --with-deps
           echo "✅ Node.js dependencies installed"
-
-      - name: Create directory structure
-        run: |
-          mkdir -p results screenshots logs src
-          echo "📁 Directory structure created"
 
       - name: Load previous AI knowledge
         run: |
           if [ -f "knowledge.json" ]; then
             echo "🧠 Loading previous AI knowledge..."
-            cp knowledge.json results/knowledge-backup-$(date +%s).json 2>/dev/null || true
+            TIMESTAMP=$(date +%s)
+            cp knowledge.json results/knowledge-backup-$TIMESTAMP.json 2>/dev/null || true
             echo "✅ Knowledge loaded from previous run"
           else
             echo "🧠 Starting fresh AI learning session..."
-            echo '{"platforms": {}, "successPatterns": [], "failurePatterns": []}' > knowledge.json
           fi
 
       - name: Create configuration file
@@ -224,14 +216,12 @@ jobs:
           }
           EOF
           
-          echo "⚙️ Configuration created:"
-          cat config.json
+          echo "⚙️ Configuration created"
 
-      - name: Create dummy AI script (if not exists)
+      - name: Create AI script if not exists
         run: |
           if [ ! -f "src/index.js" ]; then
-            echo "📝 Creating dummy AI script for testing..."
-            mkdir -p src
+            echo "📝 Creating AI script for testing..."
             cat > src/index.js << 'EOF'
           const fs = require('fs');
           const path = require('path');
@@ -240,8 +230,15 @@ jobs:
           console.log('=======================================');
           
           // قراءة الإعدادات
-          const config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
-          console.log('Configuration:', JSON.stringify(config, null, 2));
+          const configPath = path.join(__dirname, '..', 'config.json');
+          const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+          console.log('Configuration:', JSON.stringify(config.aiSystem, null, 2));
+          
+          // إنشاء مجلد النتائج إذا لم يكن موجوداً
+          const resultsDir = path.join(__dirname, '..', 'results');
+          if (!fs.existsSync(resultsDir)) {
+            fs.mkdirSync(resultsDir, { recursive: true });
+          }
           
           // محاكاة عمل النظام
           const platforms = ['Facebook', 'Twitter', 'Instagram', 'LinkedIn', 'Github'];
@@ -255,13 +252,15 @@ jobs:
             const platform = platforms[i];
             const success = Math.random() > 0.3;
             
-            results.push({
+            const result = {
               platform,
               status: success ? 'SUCCESS' : 'FAILED',
               account: success ? `user${Date.now()}${i}@example.com` : null,
               timestamp: new Date().toISOString(),
               details: success ? 'Account created successfully' : 'Simulated failure'
-            });
+            };
+            
+            results.push(result);
             
             console.log(`  ${success ? '✅' : '❌'} ${platform}: ${success ? 'Created' : 'Failed'}`);
             
@@ -289,11 +288,11 @@ jobs:
           };
           
           // حفظ التقرير
-          const reportFile = `results/report-${Date.now()}.json`;
+          const reportFile = path.join(resultsDir, `report-${Date.now()}.json`);
           fs.writeFileSync(reportFile, JSON.stringify(report, null, 2));
           
           // تحديث معرفة الذكاء الاصطناعي
-          const knowledgeFile = 'knowledge.json';
+          const knowledgeFile = path.join(__dirname, '..', 'knowledge.json');
           let knowledge = { platforms: {}, successPatterns: [], failurePatterns: [] };
           
           if (fs.existsSync(knowledgeFile)) {
@@ -338,15 +337,20 @@ jobs:
           // إرجاع النتيجة
           process.exit(report.summary.totalCreated > 0 ? 0 : 1);
           EOF
-            echo "✅ Dummy AI script created for testing"
+            echo "✅ AI script created for testing"
           else
             echo "✅ Existing AI script found"
           fi
 
       - name: Run WAHAB AI Registration System
+        id: run_ai
         run: |
           echo "🚀 Launching WAHAB AI Registration System..."
           echo "============================================"
+          
+          # تعيين الطابع الزمني للتشغيل
+          RUN_TIMESTAMP=$(date +%s)
+          echo "run_timestamp=$RUN_TIMESTAMP" >> $GITHUB_OUTPUT
           
           # تصدير متغيرات البيئة
           export AI_MODE=${{ steps.params.outputs.mode }}
@@ -354,7 +358,6 @@ jobs:
           export AI_LEARNING_ENABLED=${{ steps.params.outputs.learning }}
           export AI_SCREENSHOTS=${{ steps.params.outputs.screenshots }}
           export TARGET_PLATFORMS="${{ steps.params.outputs.target_platforms }}"
-          export RUN_TIMESTAMP=$(date +%s)
           
           # تسجيل بداية التشغيل
           echo "🕒 Start time: $(date)"
@@ -365,7 +368,7 @@ jobs:
           echo "🎯 Target platforms: $TARGET_PLATFORMS"
           
           # تشغيل النظام
-          cd src && node index.js
+          node src/index.js
           
           # تسجيل نهاية التشغيل
           echo "🕒 End time: $(date)"
@@ -380,14 +383,14 @@ jobs:
           if [ -f "knowledge.json" ]; then
             # حفظ نسخة مؤرشفة
             TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-            cp knowledge.json results/knowledge-$TIMESTAMP.json
+            cp knowledge.json results/knowledge-$TIMESTAMP.json 2>/dev/null || true
             
             # تحليل المعرفة
             echo "📈 AI Knowledge Analysis:"
             if command -v jq &> /dev/null; then
-              TOTAL_PLATFORMS=$(jq '.platforms | length' knowledge.json)
-              TOTAL_SUCCESS=$(jq '.successPatterns | length' knowledge.json)
-              TOTAL_FAILURE=$(jq '.failurePatterns | length' knowledge.json)
+              TOTAL_PLATFORMS=$(jq '.platforms | length' knowledge.json 2>/dev/null || echo "0")
+              TOTAL_SUCCESS=$(jq '.successPatterns | length' knowledge.json 2>/dev/null || echo "0")
+              TOTAL_FAILURE=$(jq '.failurePatterns | length' knowledge.json 2>/dev/null || echo "0")
               
               echo "   Platforms learned: $TOTAL_PLATFORMS"
               echo "   Success patterns: $TOTAL_SUCCESS"
@@ -404,59 +407,82 @@ jobs:
         run: |
           echo "📊 Generating system report..."
           
+          # إنشاء مجلد النتائج إذا لم يكن موجوداً
+          mkdir -p results
+          
+          # تعيين الطابع الزمني إذا لم يكن معرّفاً
+          if [ -z "${{ steps.run_ai.outputs.run_timestamp }}" ]; then
+            RUN_TIMESTAMP=$(date +%s)
+          else
+            RUN_TIMESTAMP="${{ steps.run_ai.outputs.run_timestamp }}"
+          fi
+          
           # إنشاء التقرير
           cat > SYSTEM_REPORT.md << EOF
-          # WAHAB AI Registration System - Run Report
-          
-          ## Run Information
-          - **Run ID:** ${{ github.run_id }}
-          - **Run Number:** ${{ github.run_number }}
-          - **Trigger:** ${{ github.event_name }}
-          - **Status:** ${{ job.status }}
-          - **Start Time:** $(date -d @$RUN_TIMESTAMP 2>/dev/null || echo "N/A")
-          - **Duration:** N/A
-          
-          ## Configuration
-          - **Mode:** ${{ steps.params.outputs.mode }}
-          - **Batch Size:** ${{ steps.params.outputs.batch }}
-          - **AI Learning:** ${{ steps.params.outputs.learning }}
-          - **Screenshots:** ${{ steps.params.outputs.screenshots }}
-          - **Target Platforms:** ${{ steps.params.outputs.target_platforms }}
-          
-          ## Results Summary
-          EOF
+# WAHAB AI Registration System - Run Report
+
+## Run Information
+- **Run ID:** ${{ github.run_id }}
+- **Run Number:** ${{ github.run_number }}
+- **Trigger:** ${{ github.event_name }}
+- **Status:** ${{ job.status }}
+- **Start Time:** $(date -d @$RUN_TIMESTAMP 2>/dev/null || echo "N/A")
+- **Duration:** N/A
+
+## Configuration
+- **Mode:** ${{ steps.params.outputs.mode }}
+- **Batch Size:** ${{ steps.params.outputs.batch }}
+- **AI Learning:** ${{ steps.params.outputs.learning }}
+- **Screenshots:** ${{ steps.params.outputs.screenshots }}
+- **Target Platforms:** ${{ steps.params.outputs.target_platforms }}
+
+## Results Summary
+EOF
           
           # إضافة نتائج إذا وجدت
           if ls results/report-*.json 1> /dev/null 2>&1; then
             LATEST_REPORT=$(ls -t results/report-*.json | head -1)
             
-            echo "\n## Latest Run Results" >> SYSTEM_REPORT.md
+            echo "" >> SYSTEM_REPORT.md
+            echo "## Latest Run Results" >> SYSTEM_REPORT.md
             echo '```json' >> SYSTEM_REPORT.md
-            cat $LATEST_REPORT | jq '.' >> SYSTEM_REPORT.md 2>/dev/null || cat $LATEST_REPORT >> SYSTEM_REPORT.md
+            if command -v jq &> /dev/null; then
+              jq '.' "$LATEST_REPORT" >> SYSTEM_REPORT.md 2>/dev/null || cat "$LATEST_REPORT" >> SYSTEM_REPORT.md
+            else
+              cat "$LATEST_REPORT" >> SYSTEM_REPORT.md
+            fi
             echo '```' >> SYSTEM_REPORT.md
+          else
+            echo "" >> SYSTEM_REPORT.md
+            echo "## Latest Run Results" >> SYSTEM_REPORT.md
+            echo "*No results found for this run*" >> SYSTEM_REPORT.md
           fi
           
           # إضافة معرفة الذكاء الاصطناعي
           if [ -f "knowledge.json" ]; then
-            echo "\n## AI Knowledge Summary" >> SYSTEM_REPORT.md
+            echo "" >> SYSTEM_REPORT.md
+            echo "## AI Knowledge Summary" >> SYSTEM_REPORT.md
             echo "The AI system has learned from previous runs." >> SYSTEM_REPORT.md
             
             if command -v jq &> /dev/null; then
-              echo "\n### Platform Statistics:" >> SYSTEM_REPORT.md
+              echo "" >> SYSTEM_REPORT.md
+              echo "### Platform Statistics:" >> SYSTEM_REPORT.md
               echo '```' >> SYSTEM_REPORT.md
-              jq -r '.platforms | to_entries[] | "\(.key): \(.value.attempts) attempts, \(.value.successes) successes, \(.value.failures) failures"' knowledge.json >> SYSTEM_REPORT.md
+              jq -r '.platforms | to_entries[] | "\(.key): \(.value.attempts) attempts, \(.value.successes) successes, \(.value.failures) failures"' knowledge.json 2>/dev/null || echo "No statistics available" >> SYSTEM_REPORT.md
               echo '```' >> SYSTEM_REPORT.md
             fi
           fi
           
           # إضافة معلومات التشغيل
-          echo "\n## System Information" >> SYSTEM_REPORT.md
+          echo "" >> SYSTEM_REPORT.md
+          echo "## System Information" >> SYSTEM_REPORT.md
           echo "- **Runner:** ${{ runner.os }} ${{ runner.arch }}" >> SYSTEM_REPORT.md
           echo "- **Node.js:** $(node --version)" >> SYSTEM_REPORT.md
           echo "- **Playwright:** Available" >> SYSTEM_REPORT.md
           
           # إضافة روابط
-          echo "\n## Useful Links" >> SYSTEM_REPORT.md
+          echo "" >> SYSTEM_REPORT.md
+          echo "## Useful Links" >> SYSTEM_REPORT.md
           echo "- [Google Sheet](https://docs.google.com/spreadsheets/d/${{ secrets.GOOGLE_SHEET_ID }}/edit)" >> SYSTEM_REPORT.md
           echo "- [GitHub Actions Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> SYSTEM_REPORT.md
           
@@ -484,13 +510,6 @@ jobs:
         if: success()
         run: |
           echo ""
-          echo "██████╗ ██╗    ██╗██╗  ██╗ █████╗ ██████╗ "
-          echo "██╔══██╗██║    ██║██║  ██║██╔══██╗██╔══██╗"
-          echo "██████╔╝██║ █╗ ██║███████║███████║██████╔╝"
-          echo "██╔═══╝ ██║███╗██║██╔══██║██╔══██║██╔══██╗"
-          echo "██║     ╚███╔███╔╝██║  ██║██║  ██║██████╔╝"
-          echo "╚═╝      ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝ "
-          echo ""
           echo "🎉 WAHAB AI SYSTEM COMPLETED SUCCESSFULLY!"
           echo ""
           echo "📊 View detailed report in artifacts"
@@ -515,5 +534,3 @@ jobs:
           echo ""
           echo "📋 Artifacts contain debug information"
           echo "🔄 Retry with debug mode for detailed logs"
-          echo ""
-          echo "💡 Tip: Run in debug mode with screenshots enabled"
