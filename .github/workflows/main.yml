@@ -66,19 +66,19 @@ jobs:
       - name: Create package.json
         run: |
           cat > package.json << 'EOF'
-          {
-            "name": "wahab-ai-system",
-            "version": "2.0.0",
-            "main": "src/index.js",
-            "dependencies": {
-              "playwright": "^1.40.0",
-              "googleapis": "^128.0.0"
-            },
-            "scripts": {
-              "start": "node src/index.js"
-            }
-          }
-          EOF
+{
+  "name": "wahab-ai-system",
+  "version": "2.0.0",
+  "main": "src/index.js",
+  "dependencies": {
+    "playwright": "^1.40.0",
+    "googleapis": "^128.0.0"
+  },
+  "scripts": {
+    "start": "node src/index.js"
+  }
+}
+EOF
           
           echo "📦 package.json created"
 
@@ -104,30 +104,40 @@ jobs:
 
       - name: Create configuration file
         run: |
-          cat > config.json << 'EOF'
-          {
-            "aiSystem": {
-              "version": "2.0.0",
-              "mode": "${{ github.event.inputs.mode }}",
-              "batchSize": ${{ github.event.inputs.batch_size }},
-              "learningEnabled": ${{ github.event.inputs.learning_enabled }},
-              "enableScreenshots": false,
-              "targetPlatforms": "",
-              "runType": "manual",
-              "runId": "${{ github.run_id }}"
-            },
-            "settings": {
-              "maxRetries": 3,
-              "timeout": 300000,
-              "humanLikeDelays": true,
-              "minDelay": 1000,
-              "maxDelay": 5000,
-              "headless": true
-            }
-          }
-          EOF
+          # أولاً: تعريف المتغيرات
+          MODE="${{ github.event.inputs.mode }}"
+          BATCH="${{ github.event.inputs.batch_size }}"
+          LEARNING="${{ github.event.inputs.learning_enabled }}"
+          RUN_ID="${{ github.run_id }}"
+          
+          # ثانياً: إنشاء ملف config.json
+          cat > config.json << EOF
+{
+  "aiSystem": {
+    "version": "2.0.0",
+    "mode": "$MODE",
+    "batchSize": $BATCH,
+    "learningEnabled": $LEARNING,
+    "enableScreenshots": false,
+    "targetPlatforms": "",
+    "runType": "manual",
+    "runId": "$RUN_ID"
+  },
+  "settings": {
+    "maxRetries": 3,
+    "timeout": 300000,
+    "humanLikeDelays": true,
+    "minDelay": 1000,
+    "maxDelay": 5000,
+    "headless": true
+  }
+}
+EOF
           
           echo "⚙️ Configuration created"
+          echo "Mode: $MODE"
+          echo "Batch: $BATCH"
+          echo "Learning: $LEARNING"
 
       - name: Run AI Registration System
         run: |
