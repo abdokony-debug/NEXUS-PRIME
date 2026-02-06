@@ -1,123 +1,56 @@
-name: WAHAB AI Registration System
-on:
-  workflow_dispatch:
-    inputs:
-      mode:
-        description: 'Processing mode'
-        required: true
-        default: 'intelligent'
-        type: choice
-        options:
-          - intelligent
-          - fast
-          - stealth
-      max_accounts:
-        description: 'Maximum accounts per platform'
-        required: true
-        default: '10'
-        type: string
-      use_proxies:
-        description: 'Use rotating proxies'
-        required: false
-        default: 'false'
-        type: boolean
+name: 🚀 WAHAB Referral System
+on: workflow_dispatch
 
 jobs:
-  intelligent-registration:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 120
+  process:
+    runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout code
+      # 1. تحميل الكود
+      - name: 📥 Checkout code
         uses: actions/checkout@v4
-
-      - name: Setup Node.js
+      
+      # 2. إعداد Node.js
+      - name: ⚙️ Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-
-      - name: Install AI System Dependencies
+      
+      # 3. تثبيت الحزم الضرورية فقط
+      - name: 📦 Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libnss3 \
-            libnspr4 \
-            libatk1.0-0 \
-            libatk-bridge2.0-0 \
-            libcups2 \
-            libdrm2 \
-            libdbus-1-3 \
-            libxkbcommon0 \
-            libatspi2.0-0 \
-            libxcomposite1 \
-            libxdamage1 \
-            libxfixes3 \
-            libxrandr2 \
-            libgbm1 \
-            libpango-1.0-0 \
-            libcairo2 \
-            libasound2 \
-            fonts-liberation \
-            libappindicator3-1 \
-            xdg-utils \
-            wget \
-            ca-certificates \
-            python3 \
-            python3-pip
-
-          # تثبيت مكتبات الذكاء الاصطناعي
-          pip3 install tensorflow scikit-learn nltk
-
-          # تثبيت تبعيات Node.js
-          npm ci --production
-
-      - name: Train AI Model
-        run: |
-          echo "🧠 تدريب نموذج الذكاء الاصطناعي..."
-          npm run train
-          echo "✅ اكتمل التدريب"
-
-      - name: Run Intelligent Registration
-        run: |
-          echo "🚀 تشغيل نظام التسجيل الذكي"
-          echo "Mode: ${{ github.event.inputs.mode }}"
-          echo "Max accounts: ${{ github.event.inputs.max_accounts }}"
-          echo "Use proxies: ${{ github.event.inputs.use_proxies }}"
+          echo "Installing required packages..."
+          # إنشاء package.json بسيط
+          cat > package.json << 'EOF'
+          {
+            "name": "wahab-system",
+            "version": "1.0.0",
+            "main": "src/index.js",
+            "dependencies": {
+              "playwright": "^1.40.0",
+              "googleapis": "^128.0.0"
+            }
+          }
+          EOF
           
-          node src/index.js \
-            --mode ${{ github.event.inputs.mode }} \
-            --max-accounts ${{ github.event.inputs.max_accounts }} \
-            --proxies ${{ github.event.inputs.use_proxies }}
+          # تثبيت التبعيات
+          npm install
+          
+          echo "Installing Playwright browser..."
+          npx playwright install chromium
+      
+      # 4. تشغيل النظام
+      - name: 🚀 Run WAHAB System
+        run: |
+          echo "Starting WAHAB System..."
+          echo "Mode: platforms"
+          echo "Batch size: 5"
+          echo ""
+          
+          # تشغيل النظام
+          node src/index.js --mode platforms --batch-size 5
         env:
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
           GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
           GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
-          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
-          CAPTCHA_API_KEY: ${{ secrets.CAPTCHA_API_KEY }}
-          TEMP_EMAIL_API: ${{ secrets.TEMP_EMAIL_API }}
-          PROXY_API_KEY: ${{ secrets.PROXY_API_KEY }}
-          
-          # إعدادات الذكاء الاصطناعي
-          AI_MODE: 'adaptive'
-          LEARNING_RATE: '0.1'
-          MAX_RETRIES: '3'
-          HUMAN_LIKE_DELAY: 'true'
-          TAKE_SCREENSHOTS: 'true'
-
-      - name: Generate AI Report
-        if: always()
-        run: |
-          echo "📊 إنشاء تقرير الذكاء الاصطناعي..."
-          node src/utils/reporter.js
-          cat ai-report.md
-
-      - name: Upload Results
-        uses: actions/upload-artifact@v4
-        with:
-          name: wahab-ai-results-${{ github.run_id }}
-          path: |
-            screenshots/
-            logs/
-            ai-report.md
-            accounts.db
-          retention-days: 30
+          NODE_ENV: production
