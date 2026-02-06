@@ -1,5 +1,13 @@
 name: WAHAB AI Registration System
 on:
+  # ✅ التشغيل التلقائي عند push إلى main
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - '.github/workflows/**'
+  
+  # ✅ التشغيل اليدوي مع خيارات
   workflow_dispatch:
     inputs:
       mode:
@@ -22,6 +30,10 @@ on:
         default: 'true'
         type: boolean
 
+  # ✅ تشغيل مجدول (اختياري - كل 6 ساعات)
+  schedule:
+    - cron: '0 */6 * * *'
+
 jobs:
   intelligent-registration:
     runs-on: ubuntu-22.04
@@ -30,6 +42,22 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Determine run type
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "🏃 RUN TYPE: Manual"
+            echo "MODE: ${{ github.event.inputs.mode }}"
+            echo "BATCH: ${{ github.event.inputs.batch_size }}"
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "🏃 RUN TYPE: Automatic (Push to main)"
+            echo "MODE: intelligent"
+            echo "BATCH: 3"
+          else
+            echo "🏃 RUN TYPE: Scheduled"
+            echo "MODE: fast"
+            echo "BATCH: 2"
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -94,7 +122,6 @@ jobs:
           echo "📁 Directories created"
 
       - name: Load previous knowledge
-        if: github.event.inputs.learning_enabled == 'true'
         run: |
           if [ -f "knowledge.json" ]; then
             echo "🧠 Loading previous AI knowledge..."
@@ -106,82 +133,89 @@ jobs:
       - name: Run AI Registration System
         run: |
           echo "🚀 Starting WAHAB AI Registration System"
-          echo "Mode: ${{ github.event.inputs.mode }}"
-          echo "Batch size: ${{ github.event.inputs.batch_size }}"
-          echo "AI Learning: ${{ github.event.inputs.learning_enabled }}"
-          echo ""
-          echo "🤖 Features:"
-          echo "   • Intelligent page analysis"
-          echo "   • Adaptive registration strategies"
-          echo "   • Self-learning from successes/failures"
-          echo "   • Human-like behavior simulation"
-          echo "   • Knowledge persistence"
+          
+          # تحديد المعلمات بناءً على نوع التشغيل
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            MODE="${{ github.event.inputs.mode }}"
+            BATCH="${{ github.event.inputs.batch_size }}"
+            LEARNING="${{ github.event.inputs.learning_enabled }}"
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            MODE="intelligent"
+            BATCH="3"
+            LEARNING="true"
+          else
+            MODE="fast"
+            BATCH="2"
+            LEARNING="true"
+          fi
+          
+          echo "Mode: $MODE"
+          echo "Batch size: $BATCH"
+          echo "AI Learning: $LEARNING"
           echo ""
           
+          # تشغيل النظام
           node src/index.js \
-            --mode ${{ github.event.inputs.mode }} \
-            --batch-size ${{ github.event.inputs.batch_size }}
+            --mode $MODE \
+            --batch-size $BATCH
         env:
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
           GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
           GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
-          GOOGLE_SHEET_NAME: ${{ secrets.GOOGLE_SHEET_NAME }}
           NODE_ENV: production
-          AI_MODE: ${{ github.event.inputs.mode }}
-          LEARNING_ENABLED: ${{ github.event.inputs.learning_enabled }}
+          AI_MODE: $MODE
+          LEARNING_ENABLED: $LEARNING
           HUMAN_DELAYS: 'true'
-          MAX_RETRIES: '2'
 
       - name: Save AI knowledge
-        if: github.event.inputs.learning_enabled == 'true'
         run: |
           if [ -f "knowledge.json" ]; then
             echo "💾 Saving AI knowledge for next run..."
             cp knowledge.json results/knowledge-saved-$(date +%s).json
           fi
 
-      - name: Generate AI insights report
+      - name: Generate summary report
         if: always()
         run: |
-          echo "📊 AI SYSTEM INSIGHTS REPORT" > ai-insights.md
-          echo "============================" >> ai-insights.md
-          echo "" >> ai-insights.md
-          echo "**Run Details**" >> ai-insights.md
-          echo "- Date: $(date)" >> ai-insights.md
-          echo "- Mode: ${{ github.event.inputs.mode }}" >> ai-insights.md
-          echo "- Batch Size: ${{ github.event.inputs.batch_size }}" >> ai-insights.md
-          echo "- Learning Enabled: ${{ github.event.inputs.learning_enabled }}" >> ai-insights.md
-          echo "" >> ai-insights.md
+          echo "# WAHAB AI System Report" > summary.md
+          echo "" >> summary.md
+          echo "## Run Information" >> summary.md
+          echo "- **Date:** $(date)" >> summary.md
+          echo "- **Trigger:** ${{ github.event_name }}" >> summary.md
+          echo "- **Status:** ${{ job.status }}" >> summary.md
+          echo "" >> summary.md
           
-          if [ -f "knowledge.json" ]; then
-            echo "**Knowledge Base**" >> ai-insights.md
-            echo '```json' >> ai-insights.md
-            cat knowledge.json >> ai-insights.md
-            echo '```' >> ai-insights.md
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "- **Mode:** ${{ github.event.inputs.mode }}" >> summary.md
+            echo "- **Batch Size:** ${{ github.event.inputs.batch_size }}" >> summary.md
+            echo "- **Learning:** ${{ github.event.inputs.learning_enabled }}" >> summary.md
           fi
           
           if ls results/report-*.json 1> /dev/null 2>&1; then
             latest_report=$(ls -t results/report-*.json | head -1)
-            echo "" >> ai-insights.md
-            echo "**Latest Run Summary**" >> ai-insights.md
+            echo "" >> summary.md
+            echo "## Results" >> summary.md
+            echo '```json' >> summary.md
             cat $latest_report | python3 -c "
 import json,sys
 data=json.load(sys.stdin)
-print(f'- Platforms Processed: {data[\"platformsProcessed\"]}')
-print(f'- Total Accounts Requested: {data[\"summary\"][\"totalRequested\"]}')
-print(f'- Total Accounts Created: {data[\"summary\"][\"totalCreated\"]}')
-print(f'- Success Rate: {data[\"summary\"][\"successRate\"]}%')
-print('')
-print('**Platform Details:**')
-for platform in data['results']:
-    print(f'- {platform[\"platform\"]}: {platform[\"accountsCreated\"]}/{platform[\"accountsCreated\"]+platform[\"accountsFailed\"]} ({platform[\"message\"]})')
-" >> ai-insights.md
+print(f'Platforms Processed: {data[\"platformsProcessed\"]}')
+print(f'Total Accounts Requested: {data[\"summary\"][\"totalRequested\"]}')
+print(f'Total Accounts Created: {data[\"summary\"][\"totalCreated\"]}')
+print(f'Total Accounts Failed: {data[\"summary\"][\"totalFailed\"]}')
+print(f'Success Rate: {data[\"summary\"][\"successRate\"]}%')
+" >> summary.md
+            echo '```' >> summary.md
           fi
           
-          cat ai-insights.md
+          echo "" >> summary.md
+          echo "## Google Sheet" >> summary.md
+          echo "- **View Results:** https://docs.google.com/spreadsheets/d/${{ secrets.GOOGLE_SHEET_ID }}/edit" >> summary.md
+          
+          cat summary.md
 
-      - name: Upload results and knowledge
+      - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -189,21 +223,30 @@ for platform in data['results']:
           path: |
             results/
             knowledge.json
-            ai-insights.md
+            summary.md
+            screenshots/
           retention-days: 30
 
-      - name: Post-run analysis
-        if: always()
+      - name: Success notification
+        if: success()
         run: |
-          echo "📈 POST-RUN ANALYSIS"
-          echo "==================="
+          echo "🎉 WAHAB AI SYSTEM COMPLETED SUCCESSFULLY!"
           echo ""
-          echo "🔍 Check the following:"
-          echo "   1. Google Sheet for registration results"
-          echo "   2. Downloaded artifacts for detailed reports"
-          echo "   3. AI knowledge file for learning progress"
-          echo ""
-          echo "🧠 Next run will be smarter!"
-          echo ""
-          echo "📊 View Google Sheet:"
+          echo "📊 View results in Google Sheets:"
           echo "https://docs.google.com/spreadsheets/d/${{ secrets.GOOGLE_SHEET_ID }}/edit"
+          echo ""
+          echo "📦 Download detailed report from artifacts"
+          echo ""
+          echo "🔁 Next run will be smarter!"
+
+      - name: Failure notification
+        if: failure()
+        run: |
+          echo "❌ WAHAB AI SYSTEM FAILED!"
+          echo ""
+          echo "🔧 Check the following:"
+          echo "1. Google Sheets permissions"
+          echo "2. Environment variables"
+          echo "3. Playwright installation"
+          echo ""
+          echo "📋 Debug logs available in artifacts"
