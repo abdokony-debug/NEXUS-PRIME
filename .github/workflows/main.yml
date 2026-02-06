@@ -1,12 +1,5 @@
 name: WAHAB AI Registration System
-on:
-  # ✅ التشغيل التلقائي عند push إلى main
-  push:
-    branches: [ main ]
-    paths:
-      - 'src/**'
-      - '.github/workflows/**'
-  
+on: 
   # ✅ التشغيل اليدوي مع خيارات
   workflow_dispatch:
     inputs:
