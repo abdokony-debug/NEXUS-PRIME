@@ -11,21 +11,21 @@ on:
           - intelligent
           - fast
           - stealth
-      max_accounts:
-        description: 'Maximum accounts per platform'
+      batch_size:
+        description: 'Number of platforms to process'
         required: true
-        default: '10'
+        default: '3'
         type: string
-      use_proxies:
-        description: 'Use rotating proxies'
-        required: false
-        default: 'false'
+      learning_enabled:
+        description: 'Enable AI learning'
+        required: true
+        default: 'true'
         type: boolean
 
 jobs:
   intelligent-registration:
     runs-on: ubuntu-22.04
-    timeout-minutes: 120
+    timeout-minutes: 90
     
     steps:
       - name: Checkout code
@@ -36,7 +36,7 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install AI System Dependencies
+      - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -61,63 +61,149 @@ jobs:
             libappindicator3-1 \
             xdg-utils \
             wget \
-            ca-certificates \
-            python3 \
-            python3-pip
+            ca-certificates
 
-          # تثبيت مكتبات الذكاء الاصطناعي
-          pip3 install tensorflow scikit-learn nltk
-
-          # تثبيت تبعيات Node.js
-          npm ci --production
-
-      - name: Train AI Model
+      - name: Create package.json
         run: |
-          echo "🧠 تدريب نموذج الذكاء الاصطناعي..."
-          npm run train
-          echo "✅ اكتمل التدريب"
+          cat > package.json << 'EOF'
+          {
+            "name": "wahab-ai-system",
+            "version": "2.0.0",
+            "main": "src/index.js",
+            "dependencies": {
+              "playwright": "^1.40.0",
+              "googleapis": "^128.0.0"
+            },
+            "scripts": {
+              "start": "node src/index.js"
+            }
+          }
+          EOF
+          
+          echo "📦 package.json created"
 
-      - name: Run Intelligent Registration
+      - name: Install Node dependencies
         run: |
-          echo "🚀 تشغيل نظام التسجيل الذكي"
+          npm install
+          npx playwright install chromium
+          echo "✅ Dependencies installed"
+
+      - name: Create directories
+        run: |
+          mkdir -p results screenshots
+          echo "📁 Directories created"
+
+      - name: Load previous knowledge
+        if: github.event.inputs.learning_enabled == 'true'
+        run: |
+          if [ -f "knowledge.json" ]; then
+            echo "🧠 Loading previous AI knowledge..."
+            cp knowledge.json results/knowledge-backup.json 2>/dev/null || true
+          else
+            echo "🧠 Starting fresh AI learning..."
+          fi
+
+      - name: Run AI Registration System
+        run: |
+          echo "🚀 Starting WAHAB AI Registration System"
           echo "Mode: ${{ github.event.inputs.mode }}"
-          echo "Max accounts: ${{ github.event.inputs.max_accounts }}"
-          echo "Use proxies: ${{ github.event.inputs.use_proxies }}"
+          echo "Batch size: ${{ github.event.inputs.batch_size }}"
+          echo "AI Learning: ${{ github.event.inputs.learning_enabled }}"
+          echo ""
+          echo "🤖 Features:"
+          echo "   • Intelligent page analysis"
+          echo "   • Adaptive registration strategies"
+          echo "   • Self-learning from successes/failures"
+          echo "   • Human-like behavior simulation"
+          echo "   • Knowledge persistence"
+          echo ""
           
           node src/index.js \
             --mode ${{ github.event.inputs.mode }} \
-            --max-accounts ${{ github.event.inputs.max_accounts }} \
-            --proxies ${{ github.event.inputs.use_proxies }}
+            --batch-size ${{ github.event.inputs.batch_size }}
         env:
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
           GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
           GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
-          CAPTCHA_API_KEY: ${{ secrets.CAPTCHA_API_KEY }}
-          TEMP_EMAIL_API: ${{ secrets.TEMP_EMAIL_API }}
-          PROXY_API_KEY: ${{ secrets.PROXY_API_KEY }}
-          
-          # إعدادات الذكاء الاصطناعي
-          AI_MODE: 'adaptive'
-          LEARNING_RATE: '0.1'
-          MAX_RETRIES: '3'
-          HUMAN_LIKE_DELAY: 'true'
-          TAKE_SCREENSHOTS: 'true'
+          GOOGLE_SHEET_NAME: ${{ secrets.GOOGLE_SHEET_NAME }}
+          NODE_ENV: production
+          AI_MODE: ${{ github.event.inputs.mode }}
+          LEARNING_ENABLED: ${{ github.event.inputs.learning_enabled }}
+          HUMAN_DELAYS: 'true'
+          MAX_RETRIES: '2'
 
-      - name: Generate AI Report
+      - name: Save AI knowledge
+        if: github.event.inputs.learning_enabled == 'true'
+        run: |
+          if [ -f "knowledge.json" ]; then
+            echo "💾 Saving AI knowledge for next run..."
+            cp knowledge.json results/knowledge-saved-$(date +%s).json
+          fi
+
+      - name: Generate AI insights report
         if: always()
         run: |
-          echo "📊 إنشاء تقرير الذكاء الاصطناعي..."
-          node src/utils/reporter.js
-          cat ai-report.md
+          echo "📊 AI SYSTEM INSIGHTS REPORT" > ai-insights.md
+          echo "============================" >> ai-insights.md
+          echo "" >> ai-insights.md
+          echo "**Run Details**" >> ai-insights.md
+          echo "- Date: $(date)" >> ai-insights.md
+          echo "- Mode: ${{ github.event.inputs.mode }}" >> ai-insights.md
+          echo "- Batch Size: ${{ github.event.inputs.batch_size }}" >> ai-insights.md
+          echo "- Learning Enabled: ${{ github.event.inputs.learning_enabled }}" >> ai-insights.md
+          echo "" >> ai-insights.md
+          
+          if [ -f "knowledge.json" ]; then
+            echo "**Knowledge Base**" >> ai-insights.md
+            echo '```json' >> ai-insights.md
+            cat knowledge.json >> ai-insights.md
+            echo '```' >> ai-insights.md
+          fi
+          
+          if ls results/report-*.json 1> /dev/null 2>&1; then
+            latest_report=$(ls -t results/report-*.json | head -1)
+            echo "" >> ai-insights.md
+            echo "**Latest Run Summary**" >> ai-insights.md
+            cat $latest_report | python3 -c "
+import json,sys
+data=json.load(sys.stdin)
+print(f'- Platforms Processed: {data[\"platformsProcessed\"]}')
+print(f'- Total Accounts Requested: {data[\"summary\"][\"totalRequested\"]}')
+print(f'- Total Accounts Created: {data[\"summary\"][\"totalCreated\"]}')
+print(f'- Success Rate: {data[\"summary\"][\"successRate\"]}%')
+print('')
+print('**Platform Details:**')
+for platform in data['results']:
+    print(f'- {platform[\"platform\"]}: {platform[\"accountsCreated\"]}/{platform[\"accountsCreated\"]+platform[\"accountsFailed\"]} ({platform[\"message\"]})')
+" >> ai-insights.md
+          fi
+          
+          cat ai-insights.md
 
-      - name: Upload Results
+      - name: Upload results and knowledge
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: wahab-ai-results-${{ github.run_id }}
           path: |
-            screenshots/
-            logs/
-            ai-report.md
-            accounts.db
+            results/
+            knowledge.json
+            ai-insights.md
           retention-days: 30
+
+      - name: Post-run analysis
+        if: always()
+        run: |
+          echo "📈 POST-RUN ANALYSIS"
+          echo "==================="
+          echo ""
+          echo "🔍 Check the following:"
+          echo "   1. Google Sheet for registration results"
+          echo "   2. Downloaded artifacts for detailed reports"
+          echo "   3. AI knowledge file for learning progress"
+          echo ""
+          echo "🧠 Next run will be smarter!"
+          echo ""
+          echo "📊 View Google Sheet:"
+          echo "https://docs.google.com/spreadsheets/d/${{ secrets.GOOGLE_SHEET_ID }}/edit"
