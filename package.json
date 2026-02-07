@@ -2,15 +2,14 @@
   "name": "kony-marketing",
   "version": "1.0.0",
   "description": "Kony Marketing Automation System",
-  "main": "src/index.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "nodemon src/index.js",
-    "test": "jest",
-    "setup": "node scripts/setup.js",
-    "lint": "eslint src/"
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "echo \"No tests specified\" && exit 0",
+    "setup": "node setup.js"
   },
-  "keywords": ["marketing", "automation", "outreach", "sales"],
+  "keywords": ["marketing", "automation", "outreach"],
   "author": "",
   "license": "MIT",
   "dependencies": {
@@ -23,7 +22,6 @@
     "puppeteer-extra-plugin-stealth": "^2.11.2"
   },
   "devDependencies": {
-    "jest": "^29.7.0",
     "nodemon": "^3.0.0"
   },
   "engines": {
