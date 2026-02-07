@@ -5,22 +5,25 @@ const path = require('path');
 class AICore {
   constructor() {
     this.intelligenceLevel = process.env.AI_INTELLIGENCE_LEVEL || 'high';
-    this.learningRate = parseFloat(process.env.AI_LEARNING_RATE) || 0.85;
+    this.learningRate = this.getLearningRate();
     this.knowledgeBase = this.loadKnowledgeBase();
     this.decisionMatrix = this.buildDecisionMatrix();
   }
 
+  getLearningRate() {
+    const rate = parseFloat(process.env.AI_LEARNING_RATE);
+    return isNaN(rate) ? 0.85 : rate;
+  }
+
   loadKnowledgeBase() {
     const kbPath = 'data/knowledge_base.json';
-    
     if (fs.existsSync(kbPath)) {
       try {
         return JSON.parse(fs.readFileSync(kbPath, 'utf8'));
       } catch {
-        return this.createDefaultKnowledgeBase();
+        console.error("Failed to read knowledge base, creating default.");
       }
     }
-    
     return this.createDefaultKnowledgeBase();
   }
 
@@ -69,39 +72,44 @@ class AICore {
       confidence: 0
     };
 
-    // Factor 1: Intent Analysis
+    // Calculate factors and score
     analysis.factors.intent = target.intentScore / 100;
     analysis.score += analysis.factors.intent * 40;
-
-    // Factor 2: Engagement Analysis
     analysis.factors.engagement = Math.min(target.engagementRate * 10, 1);
     analysis.score += analysis.factors.engagement * 20;
 
-    // Factor 3: Recency Analysis
     const daysSinceActive = (Date.now() - new Date(target.lastActive).getTime()) / (1000 * 3600 * 24);
-    analysis.factors.recency = daysSinceActive < 3 ? 0.9 : daysSinceActive < 7 ? 0.5 : 0.2;
+    analysis.factors.recency = this.evaluateRecency(daysSinceActive);
     analysis.score += analysis.factors.recency * 15;
 
-    // Factor 4: Platform Analysis
     analysis.factors.platform = this.getPlatformScore(target.platform);
     analysis.score += analysis.factors.platform * 15;
 
-    // Factor 5: Regional Analysis
     analysis.factors.region = this.getRegionScore(target.region);
     analysis.score += analysis.factors.region * 10;
 
     // Calculate confidence
     analysis.confidence = this.calculateConfidence(analysis.factors);
 
-    // Generate recommendations
+    // Generate recommendations based on analysis
+    this.generateRecommendations(analysis);
+
+    return analysis;
+  }
+
+  evaluateRecency(days) {
+    if (days < 3) return 0.9;
+    if (days < 7) return 0.5;
+    return 0.2;
+  }
+
+  generateRecommendations(analysis) {
     if (analysis.factors.intent < 0.7) {
       analysis.recommendations.push('Low intent - consider secondary approach');
     }
     if (analysis.factors.recency < 0.5) {
       analysis.recommendations.push('Target inactive - lower priority');
     }
-
-    return analysis;
   }
 
   getPlatformScore(platform) {
@@ -136,12 +144,9 @@ class AICore {
       region: 0.1
     };
 
-    let confidence = 0;
-    Object.keys(weights).forEach(factor => {
-      confidence += (factors[factor] || 0) * weights[factor];
-    });
-
-    return Math.min(Math.max(confidence, 0), 1);
+    return Object.keys(weights).reduce((confidence, factor) => {
+      return confidence + ((factors[factor] || 0) * weights[factor]);
+    }, 0).clamp(0, 1);
   }
 
   async makeDecision(context, options) {
@@ -152,24 +157,27 @@ class AICore {
       alternatives: []
     };
 
-    // AI decision logic
     if (context.type === 'target_contact') {
       const analysis = await this.analyzeTarget(context.target);
-      
-      if (analysis.confidence >= this.decisionMatrix.target_selection.confidence_required) {
-        decision.action = 'contact';
-        decision.confidence = analysis.confidence;
-        decision.reasoning = analysis.recommendations;
-      } else {
-        decision.action = 'skip';
-        decision.confidence = 1 - analysis.confidence;
-        decision.reasoning = ['Low AI confidence score'];
-      }
+      return this.decideOnTargetContact(analysis, decision);
     } else if (context.type === 'message_strategy') {
       decision.action = this.selectMessageStrategy(context);
       decision.confidence = 0.85;
     }
 
+    return decision;
+  }
+
+  decideOnTargetContact(analysis, decision) {
+    if (analysis.confidence >= this.decisionMatrix.target_selection.confidence_required) {
+      decision.action = 'contact';
+      decision.confidence = analysis.confidence;
+      decision.reasoning = analysis.recommendations;
+    } else {
+      decision.action = 'skip';
+      decision.confidence = 1 - analysis.confidence;
+      decision.reasoning = ['Low AI confidence score'];
+    }
     return decision;
   }
 
@@ -181,11 +189,10 @@ class AICore {
       social_proof: { weight: 0.1 }
     };
 
-    // AI selects strategy based on context
     if (context.platform === 'linkedin') return 'value_first';
     if (context.platform === 'reddit') return 'question_based';
     if (context.intent > 85) return 'direct';
-    
+
     return 'value_first';
   }
 
@@ -196,37 +203,26 @@ class AICore {
       context: result.context,
       confidence_before: result.confidence_before,
       confidence_after: result.confidence_after,
-      insights: []
+      insights: this.extractInsights(result)
     };
 
-    // Extract insights
-    if (result.success) {
-      learning.insights.push('Strategy successful');
-      this.adjustWeights('positive', result.context);
-    } else {
-      learning.insights.push('Strategy needs adjustment');
-      this.adjustWeights('negative', result.context);
-    }
-
-    // Store learning
     this.knowledgeBase.learnings.push(learning);
+    this.adjustWeights(result.success ? 'positive' : 'negative', result.context);
     this.saveKnowledgeBase();
+  }
+
+  extractInsights(result) {
+    return result.success ? ['Strategy successful'] : ['Strategy needs adjustment'];
   }
 
   adjustWeights(outcome, context) {
     const adjustment = outcome === 'positive' ? 0.05 : -0.03;
-    
-    // Adjust decision matrix based on outcome
+
     if (context.platform) {
       if (!this.knowledgeBase.patterns.platform_performance[context.platform]) {
         this.knowledgeBase.patterns.platform_performance[context.platform] = { successes: 0, failures: 0 };
       }
-      
-      if (outcome === 'positive') {
-        this.knowledgeBase.patterns.platform_performance[context.platform].successes++;
-      } else {
-        this.knowledgeBase.patterns.platform_performance[context.platform].failures++;
-      }
+      this.knowledgeBase.patterns.platform_performance[context.platform][outcome === 'positive' ? 'successes' : 'failures']++;
     }
 
     this.saveKnowledgeBase();
@@ -246,31 +242,36 @@ class AICore {
 
   getOptimizationSuggestions() {
     const suggestions = [];
-    
-    // Analyze patterns
     const totalLearnings = this.knowledgeBase.learnings.length;
+
     if (totalLearnings > 10) {
       const successRate = this.knowledgeBase.learnings.filter(l => l.result).length / totalLearnings;
-      
+
       if (successRate < 0.5) {
         suggestions.push('Consider increasing intent threshold');
       }
-      
       if (successRate > 0.8) {
         suggestions.push('Consider expanding target criteria');
       }
     }
 
-    // Platform optimization
+    this.analyzePlatformPerformance(suggestions);
+    return suggestions;
+  }
+
+  analyzePlatformPerformance(suggestions) {
     Object.entries(this.knowledgeBase.patterns.platform_performance).forEach(([platform, stats]) => {
       const platformSuccessRate = stats.successes / (stats.successes + stats.failures);
       if (platformSuccessRate < 0.4) {
         suggestions.push(`Review ${platform} strategy`);
       }
     });
-
-    return suggestions;
   }
 }
+
+// Utility function to clamp values between min and max
+Number.prototype.clamp = function(min, max) {
+  return Math.min(Math.max(this, min), max);
+};
 
 module.exports = AICore;
