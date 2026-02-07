@@ -15,7 +15,6 @@ on:
           - ai_debug
 
 env:
-  # Configurable variables - easily modifiable
   REVENUE_PER_RESPONSE: 25
   INTENT_THRESHOLD: 75
   SUCCESS_THRESHOLD: 80
@@ -23,399 +22,115 @@ env:
   PLATFORMS: "Reddit,Twitter,LinkedIn,Instagram,Pinterest"
   PEAK_HOURS: "14:00-16:00 UTC"
   OPTIMAL_MESSAGE_LENGTH: "120-180 chars"
+  MESSAGE_TYPES: "Personalized,Value-based,Question-based,Social-proof"
 
 jobs:
   intelligent_marketing:
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Initialize AI System
+      - name: Checkout
         uses: actions/checkout@v4
-        
-      - name: Setup Intelligent Environment
+
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          
-      - name: Verify Required Tools
-        id: verify_tools
+
+      - name: Verify Tools
         run: |
-          echo "🔧 Verifying required tools..."
-          
-          # Check for essential tools
-          REQUIRED_TOOLS=("bc" "date" "sleep" "awk" "uname")
-          MISSING_TOOLS=()
-          
-          for tool in "${REQUIRED_TOOLS[@]}"; do
-            if ! command -v $tool &> /dev/null; then
-              MISSING_TOOLS+=("$tool")
-            fi
+          for tool in bc date sleep awk; do
+            command -v "$tool" >/dev/null || { echo "❌ Missing $tool"; exit 1; }
           done
-          
-          if [ ${#MISSING_TOOLS[@]} -ne 0 ]; then
-            echo "❌ ERROR: Missing required tools: ${MISSING_TOOLS[*]}"
-            exit 1
-          fi
-          
-          echo "✅ All required tools are available"
-          
-      - name: Execute Kony AI Marketing
-        id: kony_execution
+          echo "✅ All tools available"
+
+      - name: Run Kony AI Marketing
+        id: kony
         run: |
-          # ========================================
-          # KONY AI MARKETING CORE ENGINE
-          # ========================================
-          set -e  # Stop on any error
-          
-          echo "🧠 Kony AI Marketing System v3.0"
-          echo "================================="
-          
-          # Extract parameters
-          CAMPAIGN_MODE="${{ github.event.inputs.campaign_mode }}"
-          
-          echo "⚙️ Configuration:"
-          echo "   Mode: $CAMPAIGN_MODE"
-          echo "   Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
-          echo "   Runner: $(uname -a)"
-          echo ""
-          
-          # Function: Calculate percentage safely
-          calculate_percentage() {
-            local numerator=$1
-            local denominator=$2
-            
-            if [ $denominator -eq 0 ]; then
-              echo "0.0"
-            else
-              echo "scale=1; $numerator * 100 / $denominator" | bc
-            fi
-          }
-          
-          # Function: Generate platform-specific data
-          generate_platform_data() {
-            local platform=$1
-            local mode=$2
-            
-            TARGET_SCORE=$((RANDOM % 30 + 70))  # 70-100
-            
-            case $mode in
-              "ai_aggressive")
-                TARGET_COUNT=$((RANDOM % 5 + 8))
-                ;;
-              "ai_standard")
-                TARGET_COUNT=$((RANDOM % 4 + 5))
-                ;;
-              "ai_debug")
-                TARGET_COUNT=$((RANDOM % 2 + 1))
-                ;;
-              *)
-                TARGET_COUNT=$((RANDOM % 3 + 3))
-                ;;
+          set -euo pipefail
+          START=$(date +%s)
+
+          MODE="${{ github.event.inputs.campaign_mode }}"
+          IFS=',' read -ra PLATFORMS <<< "$PLATFORMS"
+          IFS=',' read -ra MESSAGES <<< "$MESSAGE_TYPES"
+
+          calculate() { bc <<< "scale=1; $1 * 100 / $2"; }
+
+          TOTAL=0
+          for p in "${PLATFORMS[@]}"; do
+            case $MODE in
+              ai_aggressive)  n=$((RANDOM % 5 + 8)) ;;
+              ai_standard)    n=$((RANDOM % 4 + 5)) ;;
+              ai_debug)       n=$((RANDOM % 2 + 1)) ;;
+              *)              n=$((RANDOM % 3 + 3)) ;;
             esac
-            
-            echo "$TARGET_COUNT:$TARGET_SCORE"
-          }
-          
-          # Function: Assess performance
-          assess_performance() {
-            local rate=$1
-            local excellent_threshold=$2
-            local good_threshold=$3
-            
-            if [ $(echo "$rate >= $excellent_threshold" | bc -l) -eq 1 ]; then
-              echo "✅ Excellent"
-            elif [ $(echo "$rate >= $good_threshold" | bc -l) -eq 1 ]; then
-              echo "⚠️ Average"
-            else
-              echo "❌ Poor"
-            fi
-          }
-          
-          # ========================================
-          # MODULE 1: AI TARGET FINDER
-          # ========================================
-          echo "🎯 MODULE 1: AI Target Finder"
-          echo "----------------------------"
-          
-          # Smart search simulation
-          IFS=',' read -ra TARGET_PLATFORMS <<< "$PLATFORMS"
-          TOTAL_TARGETS=0
-          PLATFORM_TARGETS=()
-          
-          for platform in "${TARGET_PLATFORMS[@]}"; do
-            platform_data=$(generate_platform_data "$platform" "$CAMPAIGN_MODE")
-            IFS=':' read -r TARGET_COUNT TARGET_SCORE <<< "$platform_data"
-            
-            TOTAL_TARGETS=$((TOTAL_TARGETS + TARGET_COUNT))
-            PLATFORM_TARGETS+=("$platform:$TARGET_COUNT:$TARGET_SCORE")
-            
-            echo "   🔍 $platform: $TARGET_COUNT targets (Score: $TARGET_SCORE%)"
-            sleep 0.1
+            TOTAL=$((TOTAL + n))
+            echo "🔍 $p: $n targets"
           done
-          
-          echo ""
-          echo "   📊 Total potential buyers: $TOTAL_TARGETS"
-          
-          # Debug output
-          if [ "$CAMPAIGN_MODE" = "ai_debug" ]; then
-            echo "   🐛 DEBUG: Platform breakdown:"
-            for item in "${PLATFORM_TARGETS[@]}"; do
-              IFS=':' read -r platform count score <<< "$item"
-              echo "      $platform: $count targets, $score% score"
-            done
-          fi
-          
-          # ========================================
-          # MODULE 2: AI INTENT ANALYZER
-          # ========================================
-          echo ""
-          echo "📊 MODULE 2: AI Intent Analyzer"
-          echo "------------------------------"
-          
-          # Purchase intent analysis
-          HIGH_INTENT_TARGETS=0
-          
-          if [ $TOTAL_TARGETS -gt 0 ]; then
-            for ((i=1; i<=TOTAL_TARGETS; i++)); do
-              # AI calculates intent probability
-              INTENT_SCORE=$((RANDOM % 40 + 60))  # 60-100
-              
-              if [ $INTENT_SCORE -ge $INTENT_THRESHOLD ]; then
-                HIGH_INTENT_TARGETS=$((HIGH_INTENT_TARGETS + 1))
-                if [ "$CAMPAIGN_MODE" = "ai_debug" ]; then
-                  echo "   ✅ Target $i: High intent ($INTENT_SCORE%) - READY"
-                fi
-              elif [ "$CAMPAIGN_MODE" = "ai_debug" ]; then
-                echo "   ⚠️ Target $i: Low intent ($INTENT_SCORE%) - SKIP"
-              fi
-              
-              if [ "$CAMPAIGN_MODE" != "ai_debug" ]; then
-                sleep 0.01
-              fi
-            done
-            
-            if [ "$CAMPAIGN_MODE" != "ai_debug" ]; then
-              echo "   ✅ High intent targets: $HIGH_INTENT_TARGETS"
-              echo "   ⚠️ Low intent targets: $((TOTAL_TARGETS - HIGH_INTENT_TARGETS))"
-            fi
-          else
-            echo "   ⚠️ No targets found!"
-            HIGH_INTENT_TARGETS=0
-          fi
-          
-          # ========================================
-          # MODULE 3: AI MESSAGING ENGINE
-          # ========================================
-          echo ""
-          echo "📨 MODULE 3: AI Messaging Engine"
-          echo "------------------------------"
-          
-          SUCCESSFUL_CONTACTS=0
-          RESPONSES_RECEIVED=0
-          MESSAGE_TYPES=("Personalized" "Value-based" "Question-based" "Social-proof")
-          
-          if [ $HIGH_INTENT_TARGETS -gt 0 ]; then
-            for ((i=1; i<=HIGH_INTENT_TARGETS; i++)); do
-              # AI decides message strategy
-              MESSAGE_TYPE=${MESSAGE_TYPES[$((RANDOM % 4))]}
-              
-              # AI calculates success probability
-              SUCCESS_CHANCE=$((RANDOM % 30 + 70))  # 70-100
-              
-              if [ $SUCCESS_CHANCE -gt $SUCCESS_THRESHOLD ]; then
-                SUCCESSFUL_CONTACTS=$((SUCCESSFUL_CONTACTS + 1))
-                
-                # AI calculates response probability
-                if [ $((RANDOM % 100)) -lt $RESPONSE_PROBABILITY ]; then
-                  RESPONSES_RECEIVED=$((RESPONSES_RECEIVED + 1))
-                  if [ "$CAMPAIGN_MODE" = "ai_debug" ]; then
-                    echo "   💬 Target $i: $MESSAGE_TYPE message - RESPONDED"
-                  fi
-                elif [ "$CAMPAIGN_MODE" = "ai_debug" ]; then
-                  echo "   📤 Target $i: $MESSAGE_TYPE message - SENT"
-                fi
-              elif [ "$CAMPAIGN_MODE" = "ai_debug" ]; then
-                echo "   ❌ Target $i: $MESSAGE_TYPE message - FAILED"
-              fi
-              
-              # AI pacing between messages
-              if [ "$CAMPAIGN_MODE" != "ai_debug" ]; then
-                sleep 0.05
-              fi
-            done
-            
-            if [ "$CAMPAIGN_MODE" != "ai_debug" ]; then
-              echo "   ✅ Successful contacts: $SUCCESSFUL_CONTACTS"
-              echo "   💬 Responses received: $RESPONSES_RECEIVED"
-            fi
-          else
-            echo "   ⚠️ No high-intent targets to message!"
-          fi
-          
-          # ========================================
-          # MODULE 4: AI PERFORMANCE ANALYTICS
-          # ========================================
-          echo ""
-          echo "📈 MODULE 4: AI Performance Analytics"
-          echo "-----------------------------------"
-          
-          # AI calculations
-          CONTACT_RATE=$(calculate_percentage $SUCCESSFUL_CONTACTS $TOTAL_TARGETS)
-          RESPONSE_RATE=$(calculate_percentage $RESPONSES_RECEIVED $SUCCESSFUL_CONTACTS)
-          CONVERSION_RATE=$(calculate_percentage $RESPONSES_RECEIVED $TOTAL_TARGETS)
-          
-          # Revenue estimation
-          ESTIMATED_REVENUE=$((RESPONSES_RECEIVED * REVENUE_PER_RESPONSE))
-          
-          echo "   📊 Contact Rate: ${CONTACT_RATE}%"
-          echo "   💬 Response Rate: ${RESPONSE_RATE}%"
-          echo "   💰 Conversion Rate: ${CONVERSION_RATE}%"
-          echo "   🏦 Estimated Revenue: \$$ESTIMATED_REVENUE"
-          
-          # ========================================
-          # MODULE 5: AI LEARNING & OPTIMIZATION
-          # ========================================
-          echo ""
-          echo "🧠 MODULE 5: AI Learning System"
-          echo "-----------------------------"
-          
-          # AI learning from results
-          AI_RECOMMENDATION=""
-          CONVERSION_INT=$(echo "$CONVERSION_RATE" | awk '{printf "%.0f", $1}')
-          
-          if [ "$CONVERSION_INT" -gt 15 ]; then
-            echo "   ✅ Strategy OPTIMAL - Maintaining"
-            AI_RECOMMENDATION="Continue current strategy"
-          elif [ "$CONVERSION_INT" -gt 10 ]; then
-            echo "   ⚠️ Strategy GOOD - Minor adjustments needed"
-            AI_RECOMMENDATION="Increase targeting precision"
-          else
-            echo "   ❌ Strategy NEEDS IMPROVEMENT"
-            AI_RECOMMENDATION="Revise targeting and messaging"
-          fi
-          
-          # AI insights
-          echo ""
-          echo "   💡 AI Insights:"
-          echo "      • Peak engagement: $PEAK_HOURS"
-          echo "      • Best platform: Reddit (83% success)"
-          echo "      • Optimal message length: $OPTIMAL_MESSAGE_LENGTH"
-          echo ""
-          echo "   🎯 AI Recommendation:"
-          echo "      $AI_RECOMMENDATION"
-          
-          # ========================================
-          # GENERATE INTELLIGENT REPORT
-          # ========================================
-          echo ""
-          echo "📋 GENERATING AI REPORT..."
-          echo "========================="
-          
-          # Create intelligent report
-          REPORT_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-          REPORT_ID="KONY-$REPORT_TIMESTAMP"
-          REPORT_FILE="kony_report_${REPORT_TIMESTAMP}.md"
-          
-          cat > "$REPORT_FILE" << REPORT_EOF
-# 🧠 Kony AI Marketing Report
-## Report ID: ${REPORT_ID}
-## Campaign Mode: ${CAMPAIGN_MODE}
-## Generated: $(date)
 
-## 📊 EXECUTIVE SUMMARY
-- **Total Targets Analyzed**: ${TOTAL_TARGETS}
-- **High-Intent Targets**: ${HIGH_INTENT_TARGETS}
-- **Successfully Contacted**: ${SUCCESSFUL_CONTACTS}
-- **Responses Received**: ${RESPONSES_RECEIVED}
-- **Estimated Revenue**: \$${ESTIMATED_REVENUE}
+          HIGH=0
+          for ((i=1; i<=TOTAL; i++)); do
+            INTENT=$((RANDOM % 40 + 60))
+            [ $INTENT -ge $INTENT_THRESHOLD ] && ((HIGH++))
+          done
 
-## 📈 PERFORMANCE METRICS
-| Metric | Value | AI Assessment |
-|--------|-------|---------------|
-| Contact Rate | ${CONTACT_RATE}% | $(assess_performance "$CONTACT_RATE" 60 40) |
-| Response Rate | ${RESPONSE_RATE}% | $(assess_performance "$RESPONSE_RATE" 40 20) |
-| Conversion Rate | ${CONVERSION_RATE}% | $(assess_performance "$CONVERSION_RATE" 15 10) |
+          [ $HIGH -eq 0 ] && { echo "⚠️ No high-intent targets"; exit 0; }
 
-## 🎯 AI RECOMMENDATIONS
-1. ${AI_RECOMMENDATION}
-2. Focus on Reddit and LinkedIn platforms
-3. Send messages during ${PEAK_HOURS}
-4. Use personalized messaging approach
+          CONTACTS=0; RESPONSES=0
+          for ((i=1; i<=HIGH; i++)); do
+            SUCCESS=$((RANDOM % 30 + 70))
+            [ $SUCCESS -gt $SUCCESS_THRESHOLD ] && ((CONTACTS++)) &&
+              [ $((RANDOM % 100)) -lt $RESPONSE_PROBABILITY ] && ((RESPONSES++))
+          done
 
-## 🔮 NEXT ACTIONS
-- [ ] Schedule follow-up campaign
-- [ ] Update AI models with new data
-- [ ] Expand to 2 additional platforms
-- [ ] A/B test new messaging templates
+          REV=$((RESPONSES * REVENUE_PER_RESPONSE))
+          C_RATE=$(calculate CONTACTS TOTAL)
+          R_RATE=$(calculate RESPONSES CONTACTS)
+          V_RATE=$(calculate RESPONSES TOTAL)
 
-## 📅 NEXT OPTIMAL CAMPAIGN TIME
-**$(date -d '+1 day' '+%Y-%m-%d') at 14:30 UTC**
+          echo "📊 Contact: ${C_RATE}% | Response: ${R_RATE}% | Conversion: ${V_RATE}%"
+          echo "💰 Estimated Revenue: \$$REV"
 
----
-*Report generated by Kony AI Marketing System v3.0*
-REPORT_EOF
-          
-          echo "   ✅ Report saved: $REPORT_FILE"
-          
-          # ========================================
-          # OUTPUT RESULTS FOR GITHUB ACTIONS
-          # ========================================
-          echo ""
-          echo "========================================="
-          echo "✅ KONY AI MARKETING COMPLETED SUCCESSFULLY"
-          echo "========================================="
-          echo ""
-          echo "📋 Campaign Results:"
-          echo "   📁 Report: $REPORT_FILE"
-          echo "   🎯 Targets: $TOTAL_TARGETS analyzed"
-          echo "   💰 Revenue: \$$ESTIMATED_REVENUE estimated"
-          
-          # Calculate actual time
-          END_TIME=$(date +%s)
-          START_TIME=$(date -d "@${SECONDS}" +%s 2>/dev/null || echo "0")
-          DURATION=$((END_TIME - START_TIME))
-          echo "   ⏱️ Duration: $(($DURATION / 60))m $(($DURATION % 60))s"
-          echo ""
-          echo "🚀 Ready for next campaign!"
-          
-          # Save results for GitHub outputs (with validation)
-          if [ -n "$GITHUB_OUTPUT" ]; then
-            echo "TOTAL_TARGETS=$TOTAL_TARGETS" >> $GITHUB_OUTPUT
-            echo "ESTIMATED_REVENUE=$ESTIMATED_REVENUE" >> $GITHUB_OUTPUT
-            echo "REPORT_ID=$REPORT_ID" >> $GITHUB_OUTPUT
-            echo "REPORT_FILE=$REPORT_FILE" >> $GITHUB_OUTPUT
-            echo "SUCCESSFUL_CONTACTS=$SUCCESSFUL_CONTACTS" >> $GITHUB_OUTPUT
-            echo "RESPONSES_RECEIVED=$RESPONSES_RECEIVED" >> $GITHUB_OUTPUT
-            echo "CONTACT_RATE=$CONTACT_RATE" >> $GITHUB_OUTPUT
-            echo "CONVERSION_RATE=$CONVERSION_RATE" >> $GITHUB_OUTPUT
-          else
-            echo "⚠️ Warning: GITHUB_OUTPUT not available. Results not saved for workflow."
-          fi
-          
-      - name: Upload AI Report
-        if: success()
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          REPORT="kony_report_${TIMESTAMP}.md"
+
+          cat > "$REPORT" << EOF
+# Kony AI Marketing Report
+**Mode:** $MODE | **Generated:** $(date)
+
+| Metric | Value |
+|--------|-------|
+| Targets | $TOTAL |
+| High-Intent | $HIGH |
+| Contacts | $CONTACTS |
+| Responses | $RESPONSES |
+| Revenue | \$$REV |
+
+**Next Optimal Time:** $(date -d '+1 day' '+%F 14:30')
+EOF
+
+          DURATION=$(($(date +%s) - START))
+          echo "⏱️ Duration: $(($DURATION / 60))m $(($DURATION % 60))s"
+
+          # Export to GitHub
+          {
+            echo "TOTAL=$TOTAL"
+            echo "HIGH=$HIGH"
+            echo "CONTACTS=$CONTACTS"
+            echo "RESPONSES=$RESPONSES"
+            echo "REV=$REV"
+            echo "REPORT=$REPORT"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload Report
         uses: actions/upload-artifact@v4
         with:
-          name: kony-ai-report-${{ steps.kony_execution.outputs.REPORT_ID || 'unknown' }}
-          path: kony_report_*.md
+          name: kony-${{ steps.kony.outputs.REPORT }}
+          path: ${{ steps.kony.outputs.REPORT }}
           retention-days: 30
-          
-      - name: Display Campaign Summary
-        if: always()
+
+      - name: Summary
         run: |
-          echo "🎉 CAMPAIGN SUMMARY"
-          echo "=================="
-          echo "Mode: ${{ github.event.inputs.campaign_mode }}"
-          echo "Status: ${{ job.status }}"
-          
-          if [ "${{ job.status }}" = "success" ]; then
-            echo "Report ID: ${{ steps.kony_execution.outputs.REPORT_ID || 'N/A' }}"
-            echo "Total Targets: ${{ steps.kony_execution.outputs.TOTAL_TARGETS || 'N/A' }}"
-            echo "Estimated Revenue: \$${{ steps.kony_execution.outputs.ESTIMATED_REVENUE || 'N/A' }}"
-            echo "Conversion Rate: ${{ steps.kony_execution.outputs.CONVERSION_RATE || 'N/A' }}%"
-          else
-            echo "❌ Campaign failed or was cancelled"
-          fi
-          
-          echo ""
-          echo "Next: Check Artifacts tab for detailed report"
+          echo "🎯 Campaign Complete"
+          echo "📊 Targets: ${{ steps.kony.outputs.TOTAL }}"
+          echo "💰 Revenue: \$${{ steps.kony.outputs.REV }}"
+          echo "📄 Report: ${{ steps.kony.outputs.REPORT }}"
