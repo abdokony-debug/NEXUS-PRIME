@@ -12,7 +12,7 @@ async function main() {
   // قراءة الإعدادات من environment
   const mode = process.env.KONY_CAMPAIGN_MODE || 'standard';
   const batchSize = process.env.KONY_BATCH_SIZE || 10;
-  const region = process.env.KONY_TARGET_REGION || 'global';
+  const region = process.env.KONY_REGION || 'global';
   const platforms = process.env.KONY_PLATFORMS || 'all';
   
   console.log('📊 إعدادات الحملة:');
@@ -23,46 +23,58 @@ async function main() {
   console.log('='.repeat(50));
   
   // تحديد ملف التشغيل
-  let mainFile;
-  
-  if (fs.existsSync('kony-processor.js')) {
-    mainFile = 'kony-processor.js';
-  } else if (fs.existsSync('src/index.js')) {
-    mainFile = 'src/index.js';
-  } else {
-    console.error('❌ لم يتم العثور على ملف التشغيل الرئيسي');
-    process.exit(1);
-  }
+  let mainFile = findMainFile();
   
   console.log(`📜 تشغيل: ${mainFile}`);
   
   // تشغيل النظام
+  await runKonyProcessor(mainFile, mode, batchSize, region);
+}
+
+// تحديد ملف التشغيل
+function findMainFile() {
+  const files = ['kony-processor.js', 'src/index.js'];
+  
+  for (const file of files) {
+    if (fs.existsSync(file)) {
+      return file;
+    }
+  }
+  
+  console.error('❌ لم يتم العثور على ملف التشغيل الرئيسي');
+  process.exit(1);
+}
+
+// تشغيل Kony processor
+function runKonyProcessor(mainFile, mode, batchSize, region) {
   const command = `node ${mainFile} --mode=${mode} --batch-size=${batchSize} --region=${region}`;
   
-  exec(command, (error, stdout, stderr) => {
-    if (error) {
-      console.error(`❌ خطأ: ${error.message}`);
-      process.exit(1);
-    }
-    
-    if (stderr) {
-      console.error(`⚠️  تحذير: ${stderr}`);
-    }
-    
-    console.log(stdout);
-    console.log('✅ اكتمل التشغيل بنجاح');
+  return new Promise((resolve, reject) => {
+    exec(command, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`❌ خطأ: ${error.message}`);
+        return reject(error);
+      }
+      
+      if (stderr) {
+        console.warn(`⚠️  تحذير: ${stderr}`);
+      }
+      
+      console.log(stdout);
+      console.log('✅ اكتمل التشغيل بنجاح');
+      resolve();
+    });
   });
 }
 
 // معالجة إشارات الإيقاف
-process.on('SIGINT', () => {
+process.on('SIGINT', handleShutdown);
+process.on('SIGTERM', handleShutdown);
+
+function handleShutdown() {
   console.log('\n🛑 تلقي إشارة إيقاف...');
   process.exit(0);
-});
+}
 
-process.on('SIGTERM', () => {
-  console.log('\n🛑 تلقي إشارة إنهاء...');
-  process.exit(0);
-});
-
+// بدء التشغيل الرئيسي
 main().catch(console.error);
