@@ -1,5 +1,51 @@
-name: 🚀 WAHAB Referral System
-on: workflow_dispatch
+# .github/workflows/kony-marketing.yml
+name: 🚀 Kony Marketing System
+on: 
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'وضع التشغيل'
+        required: true
+        default: 'standard'
+        type: choice
+        options:
+        - standard
+        - aggressive
+        - test
+        - research-only
+        
+      batch_size:
+        description: 'حجم الدفعة'
+        required: false
+        default: '10'
+        type: number
+        
+      region:
+        description: 'المنطقة المستهدفة'
+        required: false
+        default: 'global'
+        type: choice
+        options:
+        - global
+        - europe
+        - usa
+        - middle_east
+        
+      platforms:
+        description: 'المنصات'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+        - all
+        - reddit
+        - twitter
+        - linkedin
+        - instagram
+        
+  schedule:
+    # تشغيل تلقائي كل 6 ساعات
+    - cron: '0 */6 * * *'
 
 jobs:
   process:
@@ -7,50 +53,238 @@ jobs:
     
     steps:
       # 1. تحميل الكود
-      - name: 📥 Checkout code
+      - name: 📥 تحميل الكود
         uses: actions/checkout@v4
       
       # 2. إعداد Node.js
-      - name: ⚙️ Setup Node.js
+      - name: ⚙️ إعداد Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+          cache: 'npm'
       
-      # 3. تثبيت الحزم الضرورية فقط
-      - name: 📦 Install dependencies
+      # 3. تثبيت التبعيات
+      - name: 📦 تثبيت التبعيات
         run: |
-          echo "Installing required packages..."
-          # إنشاء package.json بسيط
-          cat > package.json << 'EOF'
-          {
-            "name": "wahab-system",
-            "version": "1.0.0",
-            "main": "src/index.js",
-            "dependencies": {
-              "playwright": "^1.40.0",
-              "googleapis": "^128.0.0"
+          echo "📦 تثبيت تبعيات Kony Marketing..."
+          
+          # إنشاء package.json إذا لم يكن موجوداً
+          if [ ! -f "package.json" ]; then
+            cat > package.json << 'EOF'
+            {
+              "name": "kony-marketing",
+              "version": "1.0.0",
+              "description": "نظام Kony للتسويق الذكي",
+              "main": "scripts/kony-master.js",
+              "scripts": {
+                "start": "node scripts/kony-master.js",
+                "test": "node quick-test.js",
+                "setup": "node setup.js"
+              },
+              "dependencies": {
+                "googleapis": "^128.0.0",
+                "axios": "^1.6.0",
+                "cheerio": "^1.0.0",
+                "puppeteer": "^21.0.0",
+                "puppeteer-extra": "^3.3.6",
+                "puppeteer-extra-plugin-stealth": "^2.11.2",
+                "dotenv": "^16.3.0",
+                "node-cron": "^3.0.3",
+                "nodemailer": "^6.9.7"
+              }
             }
-          }
-          EOF
+            EOF
+            echo "✅ تم إنشاء package.json"
+          fi
           
           # تثبيت التبعيات
           npm install
           
-          echo "Installing Playwright browser..."
-          npx playwright install chromium
+          # تثبيت متصفح Puppeteer
+          echo "🌐 تثبيت متصفح Puppeteer..."
+          npx puppeteer browsers install chrome
       
-      # 4. تشغيل النظام
-      - name: 🚀 Run WAHAB System
+      # 4. إعداد البيئة
+      - name: 🔧 إعداد البيئة
         run: |
-          echo "Starting WAHAB System..."
-          echo "Mode: platforms"
-          echo "Batch size: 5"
-          echo ""
+          echo "🔧 إعداد متغيرات البيئة..."
           
-          # تشغيل النظام
-          node src/index.js --mode platforms --batch-size 5
+          # نسخ ملف البيئة
+          if [ -f "env.example" ]; then
+            cp env.example .env
+            echo "✅ تم نسخ env.example إلى .env"
+          else
+            # إنشاء ملف .env أساسي
+            cat > .env << 'EOF'
+            # إعدادات Google Sheets
+            GOOGLE_SHEETS_ID=${{ secrets.GOOGLE_SHEETS_ID }}
+            GOOGLE_SERVICE_ACCOUNT_EMAIL=${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
+            GOOGLE_PRIVATE_KEY="${{ secrets.GOOGLE_PRIVATE_KEY }}"
+            
+            # إعدادات النظام
+            KONY_MAX_TARGETS_PER_PRODUCT=${{ github.event.inputs.batch_size || '10' }}
+            KONY_CAMPAIGN_MODE=${{ github.event.inputs.mode || 'standard' }}
+            KONY_TARGET_REGION=${{ github.event.inputs.region || 'global' }}
+            KONY_TARGET_PLATFORMS=${{ github.event.inputs.platforms || 'all' }}
+            NODE_ENV=production
+            EOF
+            echo "✅ تم إنشاء ملف .env"
+          fi
+          
+          # إضافة المتغيرات من secrets
+          echo "🔐 إضافة المتغيرات السرية..."
+          echo "GOOGLE_SHEETS_ID=${{ secrets.GOOGLE_SHEETS_ID }}" >> .env
+          echo "GOOGLE_SERVICE_ACCOUNT_EMAIL=${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}" >> .env
+          echo 'GOOGLE_PRIVATE_KEY="${{ secrets.GOOGLE_PRIVATE_KEY }}"' >> .env
+          
+          # إعدادات الحملة من المدخلات
+          echo "KONY_CAMPAIGN_MODE=${{ github.event.inputs.mode || 'standard' }}" >> .env
+          echo "KONY_BATCH_SIZE=${{ github.event.inputs.batch_size || '10' }}" >> .env
+          echo "KONY_TARGET_REGION=${{ github.event.inputs.region || 'global' }}" >> .env
+          echo "KONY_PLATFORMS=${{ github.event.inputs.platforms || 'all' }}" >> .env
+          
+          # حماية ملف .env
+          chmod 600 .env
+          
+          echo "📋 محتوى .env (بدون القيم الحساسة):"
+          grep -v "PRIVATE_KEY\|CLIENT_EMAIL" .env || true
+      
+      # 5. تشغيل سكربت الإعداد
+      - name: 🛠️ تشغيل الإعداد
+        run: |
+          echo "🛠️ تشغيل سكربت الإعداد..."
+          if [ -f "setup.js" ]; then
+            node setup.js
+          else
+            echo "⚠️  ملف setup.js غير موجود، تخطي الإعداد"
+          fi
+      
+      # 6. تشغيل اختبار سريع
+      - name: 🧪 اختبار سريع
+        run: |
+          echo "🧪 إجراء اختبار سريع للنظام..."
+          if [ -f "quick-test.js" ]; then
+            node quick-test.js --test
+          else
+            echo "✅ تخطي الاختبار - الملف غير موجود"
+          fi
+      
+      # 7. تشغيل نظام Kony
+      - name: 🚀 تشغيل نظام Kony
+        run: |
+          echo "🚀 بدء نظام Kony للتسويق..."
+          echo "========================================"
+          echo "📊 إعدادات الحملة:"
+          echo "- الوضع: ${{ github.event.inputs.mode || 'standard' }}"
+          echo "- حجم الدفعة: ${{ github.event.inputs.batch_size || '10' }}"
+          echo "- المنطقة: ${{ github.event.inputs.region || 'global' }}"
+          echo "- المنصات: ${{ github.event.inputs.platforms || 'all' }}"
+          echo "========================================"
+          
+          # تحديد سكربت التشغيل
+          if [ -f "scripts/kony-master.js" ]; then
+            RUN_SCRIPT="scripts/kony-master.js"
+          elif [ -f "kony-processor.js" ]; then
+            RUN_SCRIPT="kony-processor.js"
+          elif [ -f "src/index.js" ]; then
+            RUN_SCRIPT="src/index.js"
+          else
+            echo "❌ لم يتم العثور على سكربت التشغيل الرئيسي"
+            exit 1
+          fi
+          
+          echo "📜 تشغيل: $RUN_SCRIPT"
+          
+          # تشغيل النظام مع المعاملات
+          node "$RUN_SCRIPT" \
+            --mode="${{ github.event.inputs.mode || 'standard' }}" \
+            --batch-size="${{ github.event.inputs.batch_size || '10' }}" \
+            --region="${{ github.event.inputs.region || 'global' }}" \
+            --platforms="${{ github.event.inputs.platforms || 'all' }}"
+        
         env:
-          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
-          GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
-          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
           NODE_ENV: production
+          PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: true
+          PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium
+      
+      # 8. توليد التقرير
+      - name: 📊 توليد التقرير
+        if: always()
+        run: |
+          echo "📊 توليد تقرير الحملة..."
+          
+          # إنشاء مجلد التقارير
+          mkdir -p reports
+          
+          # إنشاء التقرير
+          cat > reports/campaign-report-$(date +%Y%m%d-%H%M%S).md << 'EOF'
+          # 📋 تقرير حملة Kony التسويقية
+          
+          ## 🕒 معلومات التشغيل
+          - **الوقت:** $(date)
+          - **وضع التشغيل:** ${{ github.event.inputs.mode || 'standard' }}
+          - **حجم الدفعة:** ${{ github.event.inputs.batch_size || '10' }}
+          - **المنطقة:** ${{ github.event.inputs.region || 'global' }}
+          - **المنصات:** ${{ github.event.inputs.platforms || 'all' }}
+          - **مدة التشغيل:** ${{ job.status }}
+          
+          ## 📈 الإحصائيات
+          > سيتم ملؤها تلقائياً من النظام
+          
+          ## 📝 السجلات
+          ```bash
+          # آخر 50 سطراً من السجلات
+          EOF
+          
+          # إضافة السجلات إذا كانت موجودة
+          if [ -f "logs/kony.log" ]; then
+            tail -50 logs/kony.log >> reports/campaign-report-$(date +%Y%m%d-%H%M%S).md
+          fi
+          
+          echo "```" >> reports/campaign-report-$(date +%Y%m%d-%H%M%S).md
+          
+          echo "✅ تم إنشاء التقرير"
+      
+      # 9. رفع التقرير كـ Artifact
+      - name: 📤 رفع التقرير
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: kony-campaign-report
+          path: |
+            reports/
+            logs/
+          retention-days: 7
+      
+      # 10. تنظيف الموارد
+      - name: 🧹 تنظيف الموارد
+        if: always()
+        run: |
+          echo "🧹 تنظيف الموارد المؤقتة..."
+          # إيقاف أي عمليات متبقية
+          pkill -f "node.*kony" || true
+          pkill -f "chrome.*puppeteer" || true
+          
+          # حذف الملفات المؤقتة
+          rm -f .env.tmp
+          
+          echo "✅ اكتمل التنظيف"
+  
+  # job إضافي لإشعار النجاح/الفشل
+  notify:
+    runs-on: ubuntu-latest
+    needs: process
+    if: always()
+    
+    steps:
+      - name: 📨 إرسال إشعار
+        run: |
+          echo "📨 إرسال إشعار بالحالة: ${{ needs.process.result }}"
+          
+          if [ "${{ needs.process.result }}" = "success" ]; then
+            echo "✅ الحملة اكتملت بنجاح!"
+          elif [ "${{ needs.process.result }}" = "failure" ]; then
+            echo "❌ فشلت الحملة!"
+          else:
+            echo "⚠️  حالة الحملة: ${{ needs.process.result }}"
+          fi
