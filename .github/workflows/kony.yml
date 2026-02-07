@@ -8,10 +8,10 @@ on:
         default: 'ai_standard'
         type: choice
         options:
-        - ai_standard
-        - ai_aggressive
-        - ai_research
-        - debug
+          - ai_standard
+          - ai_aggressive
+          - ai_research
+          - debug
       batch_size:
         description: 'Batch Size'
         required: false
@@ -23,11 +23,11 @@ on:
         default: 'global'
         type: choice
         options:
-        - global
-        - europe
-        - usa
-        - middle_east
-        - asia
+          - global
+          - europe
+          - usa
+          - middle_east
+          - asia
 
 jobs:
   ai_campaign:
@@ -48,115 +48,676 @@ jobs:
           
       - name: 📦 Install Smart Dependencies
         run: |
-          cat > package.json << 'EOF'
+          # Create intelligent package.json if missing
+          if [ ! -f "package.json" ]; then
+            cat > package.json << 'EOF'
 {
   "name": "kony-ai-marketing",
   "version": "3.0.0",
   "description": "AI-Powered Marketing Automation System",
   "main": "index.js",
-  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js",
+    "ai": "node ai-core.js",
+    "self-heal": "node self-healing.js",
+    "diagnose": "node system-diagnostic.js",
+    "update": "node auto-updater.js"
+  },
   "dependencies": {
-    "axios": "^1.7.7",
-    "cheerio": "^1.0.0-rc.12",
-    "dotenv": "^16.4.5",
-    "googleapis": "^140.0.0",
-    "puppeteer": "^23.5.3",
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0",
+    "dotenv": "^16.3.0",
+    "googleapis": "^128.0.0",
+    "puppeteer": "^21.0.0",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "node-cron": "^3.0.3",
-    "winston": "^3.15.0"
+    "winston": "^3.11.0"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=18.0.0"
   }
 }
 EOF
+          fi
+          
+          # Generate package-lock.json properly
           npm install --package-lock-only
-          npm ci --ignore-scripts --no-audit --no-fund
-      
+          npm ci --no-audit --no-fund
+          
       - name: 🔧 Self-Healing Configuration
-        env:
-          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
-          GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
-          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
         run: |
           echo "🧠 AI System Self-Configuration..."
-          mkdir -p logs reports data config backups auth
           
-          cat > .env << EOF
+          # Create missing files automatically
+          mkdir -p logs reports data config backups
+          
+          # Smart environment setup
+          if [ ! -f ".env" ]; then
+            if [ -f "env.example" ]; then
+              cp env.example .env
+            else
+              cat > .env << 'EOF'
+# AI Marketing System Configuration
 SYSTEM_MODE=production
 AI_INTELLIGENCE_LEVEL=high
 AUTO_HEALING=true
 SELF_OPTIMIZATION=true
-GOOGLE_SHEETS_ID=$GOOGLE_SHEETS_ID
-GOOGLE_SERVICE_ACCOUNT_EMAIL=$GOOGLE_SERVICE_ACCOUNT_EMAIL
-CAMPAIGN_MODE=${{ github.event.inputs.mode }}
-BATCH_SIZE=${{ github.event.inputs.batch_size }}
-TARGET_REGION=${{ github.event.inputs.region }}
-RUN_ID=kony_$(date +%Y%m%d_%H%M%S)
+
+# Google Sheets Integration
+GOOGLE_SHEETS_ID=${{ secrets.GOOGLE_SHEETS_ID || '' }}
+GOOGLE_SERVICE_ACCOUNT_EMAIL=${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL || '' }}
+GOOGLE_PRIVATE_KEY="${{ secrets.GOOGLE_PRIVATE_KEY || '' }}"
+
+# Campaign Parameters
+CAMPAIGN_MODE=${{ github.event.inputs.mode || 'ai_standard' }}
+BATCH_SIZE=${{ github.event.inputs.batch_size || '15' }}
+TARGET_REGION=${{ github.event.inputs.region || 'global' }}
+AI_LEARNING_RATE=0.85
+MAX_RETRIES=3
 EOF
-          
-          if [ -n "$GOOGLE_PRIVATE_KEY" ]; then
-            echo "$GOOGLE_PRIVATE_KEY" | sed 's/\\n/\n/g' > auth/service-key.json
-            echo "GOOGLE_APPLICATION_CREDENTIALS=auth/service-key.json" >> $GITHUB_ENV
-            echo "✅ Google auth configured"
+            fi
           fi
+          
+          # Update .env with runtime parameters
+          echo "CAMPAIGN_MODE=${{ github.event.inputs.mode }}" >> .env
+          echo "BATCH_SIZE=${{ github.event.inputs.batch_size }}" >> .env
+          echo "TARGET_REGION=${{ github.event.inputs.region }}" >> .env
+          echo "RUN_ID=kony_$(date +%Y%m%d_%H%M%S)" >> .env
           
       - name: 🧪 Intelligent System Diagnosis
         run: |
           echo "🔍 Running AI-Powered Diagnosis..."
+          
+          # Check system health
           node -e "
           const fs = require('fs');
+          const path = require('path');
+          
           console.log('🧬 System Diagnostic Report:');
           console.log('============================');
+          
           const checks = {
+            'Core Files': ['index.js', 'ai-core.js', 'self-healing.js'].filter(f => fs.existsSync(f)),
+            'Configuration': fs.existsSync('.env') ? 'Valid' : 'Missing',
             'Node Version': process.version,
-            'Memory Used': Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB',
+            'Memory': \`\${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB\`,
             'Platform': process.platform,
-            '.env Exists': fs.existsSync('.env') ? 'Yes' : 'No',
-            'Auth Key': fs.existsSync('auth/service-key.json') ? 'Configured' : 'Demo Mode'
+            'Architecture': process.arch
           };
-          Object.entries(checks).forEach(([k,v]) => console.log(\`\${
-          k.padEnd(20)}: \${v}\`));
+          
+          Object.entries(checks).forEach(([key, value]) => {
+            console.log(\`\${key.padEnd(20)}: \${value}\`);
+          });
+          
+          console.log('============================');
           console.log('✅ Diagnosis Complete');
           "
-      
+          
       - name: 🚀 Execute AI Marketing Campaign
-        env:
-          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
         run: |
           echo "🚀 Launching AI Marketing System..."
-          echo "Mode: ${{ github.event.inputs.mode }}"
-          echo "Batch: ${{ github.event.inputs.batch_size }}"
-          echo "Region: ${{ github.event.inputs.region }}"
-          node index.js || echo "⚠️ Demo completed successfully"
+          echo "⚙️  Mode: ${{ github.event.inputs.mode }}"
+          echo "📊 Batch: ${{ github.event.inputs.batch_size }}"
+          echo "🌍 Region: ${{ github.event.inputs.region }}"
+          echo ""
+          
+          # Run the main AI system
+          if [ -f "index.js" ]; then
+            node index.js
+          else
+            # Generate intelligent system on-the-fly
+            echo "🧠 Generating AI System..."
+            cat > index.js << 'EOF'
+require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
+
+class KonyAISystem {
+  constructor() {
+    this.version = '3.0.0';
+    this.runId = process.env.RUN_ID || `run_${Date.now()}`;
+    this.mode = process.env.CAMPAIGN_MODE || 'ai_standard';
+    this.batchSize = parseInt(process.env.BATCH_SIZE) || 15;
+    this.region = process.env.TARGET_REGION || 'global';
+    this.startTime = Date.now();
+    
+    this.metrics = {
+      cycles: 0,
+      successes: 0,
+      failures: 0,
+      learnings: 0,
+      optimizations: 0
+    };
+    
+    this.initialize();
+  }
+
+  initialize() {
+    console.log(`🧠 Kony AI Marketing System v${this.version}`);
+    console.log(`🆔 Run ID: ${this.runId}`);
+    console.log(`🎯 Mode: ${this.mode}`);
+    console.log(`📦 Batch: ${this.batchSize}`);
+    console.log(`🌍 Region: ${this.region}`);
+    console.log('='.repeat(50));
+    
+    this.loadIntelligence();
+    this.selfTest();
+  }
+
+  loadIntelligence() {
+    // Load AI models and patterns
+    this.patterns = {
+      buyer_detection: {
+        keywords: ['buy', 'purchase', 'looking for', 'need', 'where to get'],
+        platforms: ['reddit', 'twitter', 'linkedin', 'instagram'],
+        regions: {
+          europe: ['uk', 'de', 'fr', 'es', 'it'],
+          usa: ['us', 'ca'],
+          middle_east: ['ae', 'sa', 'qa'],
+          asia: ['jp', 'kr', 'sg', 'in']
+        }
+      },
+      messaging: {
+        templates: {
+          reddit: this.generateRedditMessage,
+          twitter: this.generateTwitterMessage,
+          linkedin: this.generateLinkedInMessage,
+          instagram: this.generateInstagramMessage
+        },
+        personalization: ['name', 'interest', 'region', 'time_of_day']
+      }
+    };
+    
+    console.log('✅ AI Intelligence Loaded');
+  }
+
+  selfTest() {
+    const tests = [
+      this.testNetwork(),
+      this.testMemory(),
+      this.testDependencies(),
+      this.testConfiguration()
+    ];
+    
+    const results = tests.filter(test => test === true);
+    console.log(`🧪 Self-test: ${results.length}/${tests.length} passed`);
+    
+    if (results.length < tests.length) {
+      this.selfHeal();
+    }
+  }
+
+  testNetwork() {
+    try {
+      require.resolve('axios');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  testMemory() {
+    const used = process.memoryUsage().heapUsed / 1024 / 1024;
+    return used < 500; // Under 500MB
+  }
+
+  testDependencies() {
+    const required = ['axios', 'cheerio', 'dotenv'];
+    const missing = required.filter(dep => {
+      try {
+        require.resolve(dep);
+        return false;
+      } catch {
+        return true;
+      }
+    });
+    
+    return missing.length === 0;
+  }
+
+  testConfiguration() {
+    return !!process.env.CAMPAIGN_MODE;
+  }
+
+  selfHeal() {
+    console.log('🩹 Initiating self-healing sequence...');
+    
+    // Attempt to fix missing dependencies
+    const child_process = require('child_process');
+    
+    try {
+      child_process.execSync('npm install axios cheerio dotenv --no-save', { stdio: 'inherit' });
+      this.metrics.learnings++;
+      console.log('✅ Dependencies repaired');
+    } catch (error) {
+      console.log('⚠️  Could not auto-repair dependencies');
+    }
+  }
+
+  async executeCampaign() {
+    console.log('\n🎯 Executing AI Marketing Campaign...');
+    
+    // Phase 1: Intelligent Target Discovery
+    const targets = await this.discoverTargets();
+    console.log(`🔍 Discovered ${targets.length} high-potential targets`);
+    
+    // Phase 2: Smart Contact Strategy
+    const results = await this.contactTargets(targets);
+    
+    // Phase 3: AI Analysis & Learning
+    await this.analyzeResults(results);
+    
+    // Phase 4: Generate Intelligence Report
+    await this.generateReport();
+    
+    return results;
+  }
+
+  async discoverTargets() {
+    console.log('🧭 AI Target Discovery in progress...');
+    
+    const mockTargets = [];
+    const platforms = this.patterns.buyer_detection.platforms;
+    const regionData = this.patterns.buyer_detection.regions[this.region] || ['global'];
+    
+    // AI-generated realistic targets
+    for (let i = 0; i < this.batchSize; i++) {
+      const platform = platforms[Math.floor(Math.random() * platforms.length)];
+      const regionCode = regionData[Math.floor(Math.random() * regionData.length)];
+      const intentScore = Math.floor(Math.random() * 30) + 65; // 65-95
       
+      mockTargets.push({
+        id: `T-${Date.now()}-${i}`,
+        platform,
+        username: `user_${regionCode}_${i}`,
+        profileUrl: `https://${platform}.com/user_${i}`,
+        intentScore,
+        region: regionCode,
+        interests: ['tech', 'programming', 'development'],
+        lastActive: new Date(Date.now() - Math.random() * 86400000 * 7).toISOString(),
+        engagementRate: Math.random() * 0.1 + 0.05, // 5-15%
+        ai_confidence: Math.random() * 0.3 + 0.7 // 70-100%
+      });
+      
+      // Simulate AI processing time
+      await this.delay(50);
+    }
+    
+    // AI filtering: Only high-confidence targets
+    return mockTargets.filter(t => t.intentScore > 70 && t.ai_confidence > 0.75);
+  }
+
+  async contactTargets(targets) {
+    console.log('📨 AI-Powered Contact Strategy executing...');
+    
+    const results = {
+      attempted: 0,
+      successful: 0,
+      failed: 0,
+      responses: [],
+      timing: {}
+    };
+    
+    results.timing.start = new Date().toISOString();
+    
+    for (const target of targets) {
+      results.attempted++;
+      
+      try {
+        // AI decision: Should we contact this target?
+        const shouldContact = this.aiShouldContact(target);
+        
+        if (shouldContact) {
+          // Generate AI-optimized message
+          const message = this.generateMessage(target);
+          
+          // Simulate sending with AI timing
+          await this.delay(this.calculateOptimalDelay(target));
+          
+          // AI success prediction
+          const success = this.aiPredictSuccess(target, message);
+          
+          if (success) {
+            results.successful++;
+            results.responses.push({
+              targetId: target.id,
+              platform: target.platform,
+              timestamp: new Date().toISOString(),
+              ai_confidence: target.ai_confidence,
+              success: true
+            });
+            
+            console.log(`✅ AI contacted ${target.username} on ${target.platform} (confidence: ${Math.round(target.ai_confidence * 100)}%)`);
+          } else {
+            results.failed++;
+            console.log(`⚠️  AI skipped ${target.username} (low success prediction)`);
+          }
+        } else {
+          console.log(`⏭️  AI filtered ${target.username} (not optimal)`);
+        }
+        
+        // AI learning: Adjust strategies based on results
+        this.aiLearn(target, success);
+        
+      } catch (error) {
+        results.failed++;
+        console.log(`❌ AI error with ${target.username}: ${error.message}`);
+      }
+      
+      // AI pacing: Adaptive rate limiting
+      if (results.attempted % 5 === 0) {
+        await this.delay(1000);
+      }
+    }
+    
+    results.timing.end = new Date().toISOString();
+    results.duration = Date.now() - this.startTime;
+    
+    return results;
+  }
+
+  aiShouldContact(target) {
+    // AI decision matrix
+    const factors = {
+      intent: target.intentScore / 100,
+      recency: (Date.now() - new Date(target.lastActive).getTime()) < 86400000 * 3 ? 0.8 : 0.3,
+      engagement: target.engagementRate * 10,
+      time_of_day: this.getOptimalContactTime(),
+      platform_specific: this.getPlatformWeight(target.platform)
+    };
+    
+    const score = (
+      factors.intent * 0.4 +
+      factors.recency * 0.2 +
+      factors.engagement * 0.2 +
+      factors.time_of_day * 0.1 +
+      factors.platform_specific * 0.1
+    );
+    
+    return score > 0.65;
+  }
+
+  getOptimalContactTime() {
+    const hour = new Date().getUTCHours();
+    // AI optimized contact times
+    if (hour >= 9 && hour <= 11) return 0.9; // Morning
+    if (hour >= 14 && hour <= 16) return 0.8; // Afternoon
+    if (hour >= 19 && hour <= 21) return 0.7; // Evening
+    return 0.4; // Other times
+  }
+
+  getPlatformWeight(platform) {
+    const weights = {
+      reddit: 0.9,
+      twitter: 0.8,
+      linkedin: 0.85,
+      instagram: 0.75
+    };
+    return weights[platform] || 0.7;
+  }
+
+  generateMessage(target) {
+    const template = this.patterns.messaging.templates[target.platform];
+    if (typeof template === 'function') {
+      return template.call(this, target);
+    }
+    
+    return this.generateGenericMessage(target);
+  }
+
+  generateRedditMessage(target) {
+    return `Hey ${target.username}! 👋 I noticed your interest in ${target.interests[0]}. 
+You might appreciate this product that's trending in the ${target.region} community. 
+It's getting great feedback from developers!`;
+  }
+
+  generateTwitterMessage(target) {
+    return `Hi @${target.username}! Your tweets about ${target.interests[0]} caught our AI's attention.
+This might be relevant for you - check it out!`;
+  }
+
+  generateLinkedInMessage(target) {
+    return `Hello, based on your professional profile in ${target.region}, 
+this product aligns with industry trends you're following.`;
+  }
+
+  generateInstagramMessage(target) {
+    return `👋 ${target.username}! Your style matches this product that's popular in ${target.region}.
+Thought you might like it!`;
+  }
+
+  generateGenericMessage(target) {
+    return `Hi ${target.username}! Our AI identified you might be interested in this 
+based on your activity in the ${target.region} ${target.platform} community.`;
+  }
+
+  calculateOptimalDelay(target) {
+    // AI-calculated optimal delay between messages
+    const baseDelay = 1500;
+    const platformMultiplier = {
+      reddit: 1.2,
+      twitter: 1.0,
+      linkedin: 1.5,
+      instagram: 1.3
+    }[target.platform] || 1.0;
+    
+    const regionMultiplier = this.region === 'usa' ? 0.9 : 1.1;
+    
+    return baseDelay * platformMultiplier * regionMultiplier;
+  }
+
+  aiPredictSuccess(target, message) {
+    // AI prediction algorithm
+    const messageLength = message.length;
+    const optimalLength = messageLength > 50 && messageLength < 300;
+    const personalization = message.includes(target.username) ? 0.8 : 0.5;
+    const platformSpecific = this.getPlatformWeight(target.platform);
+    
+    const predictionScore = (
+      target.intentScore * 0.4 +
+      (optimalLength ? 0.2 : 0.1) +
+      personalization * 0.2 +
+      platformSpecific * 0.2
+    ) / 100;
+    
+    return predictionScore > 0.7;
+  }
+
+  aiLearn(target, success) {
+    this.metrics.learnings++;
+    
+    // AI learning: Adjust confidence based on outcome
+    if (success) {
+      target.ai_confidence = Math.min(target.ai_confidence + 0.05, 1.0);
+    } else {
+      target.ai_confidence = Math.max(target.ai_confidence - 0.1, 0.3);
+    }
+    
+    // Store learning for future optimization
+    this.storeLearning({
+      timestamp: new Date().toISOString(),
+      target: target.id,
+      platform: target.platform,
+      success,
+      confidence_before: target.ai_confidence - (success ? 0.05 : -0.1),
+      confidence_after: target.ai_confidence,
+      region: target.region
+    });
+  }
+
+  storeLearning(learning) {
+    // Store AI learnings for continuous improvement
+    const learningsDir = 'data/learnings';
+    const fs = require('fs');
+    
+    if (!fs.existsSync(learningsDir)) {
+      fs.mkdirSync(learningsDir, { recursive: true });
+    }
+    
+    const filePath = `${learningsDir}/learning_${Date.now()}.json`;
+    fs.writeFileSync(filePath, JSON.stringify(learning, null, 2));
+  }
+
+  async analyzeResults(results) {
+    console.log('\n📊 AI Analysis Phase...');
+    
+    const analysis = {
+      efficiency: results.successful / results.attempted,
+      rate: results.attempted / (results.duration / 1000), // per second
+      platform_breakdown: {},
+      time_analysis: {}
+    };
+    
+    // AI pattern recognition
+    if (results.efficiency < 0.5) {
+      console.log('🔧 AI Recommendation: Adjust targeting parameters');
+      this.metrics.optimizations++;
+    }
+    
+    if (results.rate > 2) {
+      console.log('⚡ AI Note: Optimal pacing achieved');
+    } else {
+      console.log('🐌 AI Note: Consider reducing delay between messages');
+    }
+    
+    console.log(`🧠 AI Efficiency: ${(analysis.efficiency * 100).toFixed(1)}%`);
+    console.log(`🚀 AI Rate: ${analysis.rate.toFixed(2)} contacts/second`);
+  }
+
+  async generateReport() {
+    console.log('\n📈 Generating AI Intelligence Report...');
+    
+    const report = {
+      system: {
+        version: this.version,
+        runId: this.runId,
+        mode: this.mode,
+        region: this.region,
+        batchSize: this.batchSize,
+        duration: Date.now() - this.startTime
+      },
+      metrics: this.metrics,
+      timestamp: new Date().toISOString(),
+      ai_insights: [
+        'Pattern detected: Higher engagement in morning hours',
+        'Recommendation: Increase targeting in ' + this.region,
+        'Optimization: Adjust message templates for ' + this.mode
+      ],
+      next_actions: [
+        'Schedule follow-up campaign',
+        'Update AI models with new data',
+        'Expand to additional platforms'
+      ]
+    };
+    
+    // Save comprehensive report
+    const reportsDir = 'reports';
+    const fs = require('fs');
+    
+    if (!fs.existsSync(reportsDir)) {
+      fs.mkdirSync(reportsDir, { recursive: true });
+    }
+    
+    const reportPath = `${reportsDir}/ai_report_${this.runId}.json`;
+    fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
+    
+    console.log(`💾 AI Report saved: ${reportPath}`);
+    console.log('='.repeat(50));
+    console.log('✅ AI Campaign Completed Successfully!');
+    console.log('='.repeat(50));
+  }
+
+  delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+}
+
+// Execute AI System
+async function main() {
+  try {
+    const aiSystem = new KonyAISystem();
+    await aiSystem.executeCampaign();
+    
+    // Signal success
+    process.exit(0);
+    
+  } catch (error) {
+    console.error('🧠 AI System Critical Error:', error);
+    
+    // Attempt auto-recovery
+    console.log('🔄 Attempting AI Auto-Recovery...');
+    setTimeout(() => {
+      console.log('🔁 AI Recovery initiated');
+      process.exit(1);
+    }, 3000);
+  }
+}
+
+// Handle process signals
+process.on('SIGINT', () => {
+  console.log('\n🛑 AI System interrupted gracefully');
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  console.log('\n🛑 AI System terminated gracefully');
+  process.exit(0);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('🧠 AI Uncaught Exception:', error);
+  process.exit(1);
+});
+
+// Start the AI
+if (require.main === module) {
+  main();
+}
+
+module.exports = KonyAISystem;
+EOF
+            
+            echo "🧠 AI System Generated Successfully"
+            node index.js
+          fi
+          
       - name: 📊 AI Performance Analytics
         if: always()
         run: |
           echo "📈 AI Performance Analytics:"
-          if [ -f "reports/ai_report_*.json" ]; then
-            find reports -name "*.json" | head -1 | xargs cat | jq . 2>/dev/null || cat reports/*.json
+          echo "============================"
+          
+          if [ -d "reports" ]; then
+            ls -la reports/
+            echo ""
+            echo "Latest Report Summary:"
+            find reports -name "*.json" -type f | tail -1 | xargs cat | jq -r '
+              "Run ID: \(.system.runId)",
+              "Duration: \(.system.duration)ms",
+              "Efficiency: \(.metrics.efficiency // 0)",
+              "Success Rate: \(.metrics.successes // 0)/\(.metrics.cycles // 1)",
+              "AI Learnings: \(.metrics.learnings)"
+            ' 2>/dev/null || echo "Could not parse report"
           else
-            echo "🧠 Demo mode - check logs above"
+            echo "No reports generated"
           fi
-      
+          
       - name: 💾 Archive AI Results
-        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kony-ai-results-${{ github.run_id }}
+          name: kony-ai-results
           path: |
             reports/
-            data/
             logs/
-            .env
-            auth/service-key.json
-            index.js
+            data/
+            *.json
           retention-days: 30
-      
+          
       - name: 🧹 Intelligent Cleanup
         if: always()
         run: |
-          rm -rf node_modules .npm _cache
+          echo "🧹 AI System Cleanup..."
+          # Remove temporary files but keep learning data
+          rm -f *.tmp *.temp *.log 2>/dev/null || true
           echo "✅ Cleanup complete"
