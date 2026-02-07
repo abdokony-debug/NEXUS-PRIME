@@ -1,4 +1,5 @@
 name: Kony Marketing System
+
 on:
   workflow_dispatch:
     inputs:
@@ -30,12 +31,11 @@ jobs:
           echo "Campaign Mode: ${{ github.event.inputs.campaign_mode }}"
           echo ""
           
-          # إنشاء ملف تشغيل بسيط إذا لم يوجد
           if [ -f "index.js" ]; then
             node index.js --mode "${{ github.event.inputs.campaign_mode }}"
           else
             echo "Creating minimal execution file..."
-            cat > kony_run.js << 'EOF'
+            cat > kony_run.js << 'EOS'
 console.log("KONY MARKETING SYSTEM - MANUAL EXECUTION");
 console.log("========================================");
 console.log("Mode:", process.argv[2] || "manual");
@@ -50,7 +50,7 @@ console.log("");
 console.log("✅ Campaign completed successfully!");
 console.log("📊 Results: 10 targets processed");
 console.log("========================================");
-EOF
+EOS
             node kony_run.js "${{ github.event.inputs.campaign_mode }}"
           fi
       
