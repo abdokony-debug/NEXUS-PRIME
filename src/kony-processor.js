@@ -1,4 +1,3 @@
-// kony-processor.js - محدث للتكامل
 class KonyProcessor {
   constructor() {
     this.components = {};
@@ -17,16 +16,20 @@ class KonyProcessor {
   }
 
   async initialize() {
-    console.log('Kony Processor initialized with integrated components');
-    
-    if (this.components.stealth) {
-      console.log('- Stealth Engine: Available');
-    }
-    if (this.components.proxy) {
-      console.log('- Proxy Rotator: Available');
-    }
-    if (this.components.sheets) {
-      console.log('- Google Sheets: Available');
+    try {
+      console.log('Kony Processor initialized with integrated components');
+      
+      if (this.components.stealth) {
+        console.log('- Stealth Engine: Available');
+      }
+      if (this.components.proxy) {
+        console.log('- Proxy Rotator: Available');
+      }
+      if (this.components.sheets) {
+        console.log('- Google Sheets: Available');
+      }
+    } catch (error) {
+      console.error('Error during initialization:', error);
     }
   }
 
@@ -47,7 +50,7 @@ class KonyProcessor {
 
   async contactTarget(target) {
     try {
-      // استخدام stealth browser للاتصال
+      // Using stealth browser to contact
       const browser = await this.components.browser.createBrowser({
         stealth: true,
         proxy: await this.components.proxy.getNextProxy()
@@ -59,7 +62,7 @@ class KonyProcessor {
       if (sent) {
         this.results.contacted++;
         
-        // تسجيل في Google Sheets
+        // Record in Google Sheets
         if (this.components.sheets) {
           await this.components.sheets.recordContact({
             campaignId: this.campaignId,
@@ -81,16 +84,16 @@ class KonyProcessor {
 
   generateSmartMessage(target) {
     const platformTemplates = {
-      reddit: `Hey ${target.username}! Saw your post about ${target.interests?.[0] || 'tech'}. You might like this product.`,
-      twitter: `Hi ${target.username}! This might interest you based on your tweets.`,
-      linkedin: `Hello, this product aligns with your professional interests.`
+      reddit: `Hey ${target.username}! I noticed your interest in ${target.interests?.[0] || 'technology'}. You might find this product interesting.`,
+      twitter: `Hi ${target.username}! Based on your tweets, I think this might interest you.`,
+      linkedin: `Hello ${target.username}, this product aligns with your professional interests.`
     };
     
-    return platformTemplates[target.platform] || `Hi ${target.username}, thought this might interest you.`;
+    return platformTemplates[target.platform] || `Hi ${target.username}, thought this might catch your attention.`;
   }
 
   async sendViaPlatform(browser, target, message) {
-    // محاكاة الإرسال عبر المنصة
+    // Simulate sending through the platform
     await this.delay(1000);
     return Math.random() > 0.3; // 70% success rate
   }
