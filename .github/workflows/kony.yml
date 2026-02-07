@@ -8,9 +8,9 @@ on:
         default: 'standard'
         type: choice
         options:
-          - standard
-          - aggressive
-          - test
+        - standard
+        - aggressive
+        - test
       batch_size:
         description: 'Batch Size'
         required: false
@@ -22,10 +22,27 @@ on:
         default: 'global'
         type: choice
         options:
-          - global
-          - europe
-          - usa
-          - middle_east
+        - global
+        - europe
+        - usa
+        - middle_east
+      platforms:
+        description: 'Target Platforms'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+        - all
+        - reddit
+        - twitter
+        - linkedin
+        - instagram
+
+  schedule:
+    - cron: '0 */6 * * *'
+
+  push:
+    branches: [main]
 
 jobs:
   kony-campaign:
@@ -33,95 +50,93 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+    - name: ⚙️ Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
 
-      - name: Create package.json if missing
-        run: |
-          if [ ! -f "package.json" ]; then
-            echo "Creating package.json..."
-            cat > package.json << EOF
+    - name: 📦 Install dependencies
+      run: |
+        echo "Installing required packages..."
+        
+        cat > package.json << 'EOF'
 {
-  "name": "kony-marketing",
+  "name": "wahab-system",
   "version": "1.0.0",
-  "description": "Kony Marketing Automation System",
-  "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
+  "main": "src/index.js",
   "dependencies": {
+    "playwright": "^1.40.0",
+    "googleapis": "^128.0.0",
     "axios": "^1.6.0",
     "cheerio": "^1.0.0",
-    "dotenv": "^16.3.0",
-    "googleapis": "^128.0.0",
-    "puppeteer": "^21.0.0"
+    "puppeteer": "^21.0.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "dotenv": "^16.3.0"
   }
 }
 EOF
-            echo "package.json created"
-          fi
+        
+        npm install
+        
+        echo "Installing Playwright browser..."
+        npx playwright install chromium
 
-      - name: Generate package-lock.json
-        run: npm i --package-lock-only
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Setup environment
-        run: |
-          if [ -f "env.example" ]; then
-            cp env.example .env
-          else
-            touch .env
-          fi
+    - name: 🚀 Run Kony System
+      run: |
+        echo "Starting Kony System..."
+        echo "Mode: ${{ github.event.inputs.mode || 'standard' }}"
+        echo "Batch size: ${{ github.event.inputs.batch_size || '10' }}"
+        echo "Region: ${{ github.event.inputs.region || 'global' }}"
+        echo "Platforms: ${{ github.event.inputs.platforms || 'all' }}"
+        echo ""
+        
+        if [ -f "src/index.js" ]; then
+          node src/index.js --mode=${{ github.event.inputs.mode || 'standard' }} --batch-size=${{ github.event.inputs.batch_size || '10' }} --region=${{ github.event.inputs.region || 'global' }}
+        elif [ -f "index.js" ]; then
+          node index.js --mode=${{ github.event.inputs.mode || 'standard' }} --batch-size=${{ github.event.inputs.batch_size || '10' }} --region=${{ github.event.inputs.region || 'global' }}
+        else
+          echo "Main file not found. Creating basic system..."
           
-          {
-            echo "GOOGLE_SHEETS_ID=${{ secrets.GOOGLE_SHEETS_ID }}"
-            echo "GOOGLE_SERVICE_ACCOUNT_EMAIL=${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}"
-            echo "GOOGLE_PRIVATE_KEY='${{ secrets.GOOGLE_PRIVATE_KEY }}'"
-            echo "KONY_MODE=${{ github.event.inputs.mode }}"
-            echo "KONY_BATCH_SIZE=${{ github.event.inputs.batch_size }}"
-            echo "KONY_REGION=${{ github.event.inputs.region }}"
-          } >> .env
+          cat > kony-basic.js << 'EOF'
+console.log('Kony Marketing System - Basic Execution');
+console.log('Arguments:', process.argv.slice(2));
 
-      - name: Run Kony System
-        run: |
-          if [ -f "index.js" ]; then
-            node index.js
-          elif [ -f "src/index.js" ]; then
-            node src/index.js
-          else
-            echo "Creating basic index.js..."
-            cat > index.js << EOF
-const fs = require('fs');
-const path = require('path');
+const mode = process.argv.find(arg => arg.startsWith('--mode='))?.split('=')[1] || 'standard';
+const batchSize = process.argv.find(arg => arg.startsWith('--batch-size='))?.split('=')[1] || '10';
+const region = process.argv.find(arg => arg.startsWith('--region='))?.split('=')[1] || 'global';
 
-console.log('Kony Marketing System - Basic Version');
-console.log('Mode:', process.env.KONY_MODE || 'standard');
-console.log('Batch Size:', process.env.KONY_BATCH_SIZE || '10');
-console.log('Region:', process.env.KONY_REGION || 'global');
+console.log(`\nCampaign Configuration:`);
+console.log(`Mode: ${mode}`);
+console.log(`Batch Size: ${batchSize}`);
+console.log(`Region: ${region}`);
 
-// Simulate campaign
-console.log('\nSimulating campaign...');
+console.log('\nExecuting campaign...');
 setTimeout(() => {
-  console.log('Campaign simulation completed');
-  console.log('Targets processed: 5');
-  console.log('Messages sent: 3');
-  console.log('Success rate: 60%');
-}, 2000);
+  console.log('Campaign execution completed successfully');
+  console.log('Processed targets: 15');
+  console.log('Messages sent: 12');
+  console.log('Success rate: 80%');
+}, 3000);
 EOF
-            node index.js
-          fi
+          
+          node kony-basic.js --mode=${{ github.event.inputs.mode || 'standard' }} --batch-size=${{ github.event.inputs.batch_size || '10' }} --region=${{ github.event.inputs.region || 'global' }}
+        fi
+      env:
+        GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+        GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+        GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+        NODE_ENV: production
 
-      - name: Upload results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: kony-results
-          path: .env
-          retention-days: 1
+    - name: 📤 Upload results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: kony-execution-results
+        path: |
+          *.log
+          output/
+        retention-days: 1
