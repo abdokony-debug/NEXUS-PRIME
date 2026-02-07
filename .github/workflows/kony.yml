@@ -1,8 +1,6 @@
 name: Kony AI Marketing System
 
-# --------------------------------------------------
-# تشغيل يدوي فقط – لا يعمل تلقائياً عند Push أو PR
-# --------------------------------------------------
+# تشغيل يدوي فقط
 on:
   workflow_dispatch:
     inputs:
@@ -54,8 +52,6 @@ jobs:
 
           MODE="${{ github.event.inputs.campaign_mode }}"
           IFS=',' read -ra PLATFORMS <<< "$PLATFORMS"
-          IFS=',' read -ra MESSAGES <<< "$MESSAGE_TYPES"
-
           calculate() { bc <<< "scale=1; $1 * 100 / $2"; }
 
           TOTAL=0
@@ -72,16 +68,14 @@ jobs:
 
           HIGH=0
           for ((i=1; i<=TOTAL; i++)); do
-            INTENT=$((RANDOM % 40 + 60))
-            [ $INTENT -ge $INTENT_THRESHOLD ] && ((HIGH++))
+            [ $((RANDOM % 40 + 60)) -ge $INTENT_THRESHOLD ] && ((HIGH++))
           done
 
           [ $HIGH -eq 0 ] && { echo "⚠️ No high-intent targets"; exit 0; }
 
           CONTACTS=0; RESPONSES=0
           for ((i=1; i<=HIGH; i++)); do
-            SUCCESS=$((RANDOM % 30 + 70))
-            [ $SUCCESS -gt $SUCCESS_THRESHOLD ] && ((CONTACTS++)) &&
+            [ $((RANDOM % 30 + 70)) -gt $SUCCESS_THRESHOLD ] && ((CONTACTS++)) &&
               [ $((RANDOM % 100)) -lt $RESPONSE_PROBABILITY ] && ((RESPONSES++))
           done
 
@@ -96,20 +90,19 @@ jobs:
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
           REPORT="kony_report_${TIMESTAMP}.md"
 
-          cat > "$REPORT" << EOF
-# Kony AI Marketing Report
-**Mode:** $MODE | **Generated:** $(date)
-
-| Metric | Value |
-|--------|-------|
-| Targets | $TOTAL |
-| High-Intent | $HIGH |
-| Contacts | $CONTACTS |
-| Responses | $RESPONSES |
-| Revenue | \$$REV |
-
-**Next Optimal Time:** $(date -d '+1 day' '+%F 14:30')
-EOF
+          # بدون Here-Document لتجنب مشاكل YAML
+          echo "# Kony AI Marketing Report" > "$REPORT"
+          echo "**Mode:** $MODE | **Generated:** $(date)" >> "$REPORT"
+          echo "" >> "$REPORT"
+          echo "| Metric | Value |" >> "$REPORT"
+          echo "|--------|-------|" >> "$REPORT"
+          echo "| Targets | $TOTAL |" >> "$REPORT"
+          echo "| High-Intent | $HIGH |" >> "$REPORT"
+          echo "| Contacts | $CONTACTS |" >> "$REPORT"
+          echo "| Responses | $RESPONSES |" >> "$REPORT"
+          echo "| Revenue | \$$REV |" >> "$REPORT"
+          echo "" >> "$REPORT"
+          echo "**Next Optimal Time:** $(date -d '+1 day' '+%F 14:30')" >> "$REPORT"
 
           DURATION=$(($(date +%s) - START))
           echo "⏱️ Duration: $(($DURATION / 60))m $(($DURATION % 60))s"
