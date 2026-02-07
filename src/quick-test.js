@@ -1,4 +1,4 @@
-// quick-test.js - اختبار شامل
+// quick-test.js - Comprehensive Test
 console.log('Testing ALL Kony System Components...\n');
 
 const components = [
@@ -16,11 +16,12 @@ const components = [
 
 const fs = require('fs');
 
+// Check each component
 components.forEach(component => {
   if (fs.existsSync(component.file)) {
     console.log(`✓ ${component.name}: EXISTS`);
-    
-    // محاولة تحميل المكون
+
+    // Attempt to load the component
     try {
       require(`./${component.file.replace('.js', '')}`);
       console.log(`  Loaded successfully\n`);
@@ -35,17 +36,18 @@ components.forEach(component => {
 console.log('\n=== Integration Test ===');
 console.log('Testing integrated system...\n');
 
-// اختبار النظام المتكامل
 try {
   const IntegratedSystem = require('./index');
   console.log('✓ Integrated system can be loaded');
   
-  // اختبار التهيئة الأساسية
+  // Initialize system
   const system = new IntegratedSystem();
   console.log('✓ Integrated system instance created');
-  
+
+  // Here you could add more tests for specific functions or components.
+
   console.log('\n✅ ALL TESTS PASSED - System is ready!');
-  
+
 } catch (error) {
   console.error('✗ Integration test failed:', error.message);
   console.log('\n⚠️  Some components may need adjustment');
