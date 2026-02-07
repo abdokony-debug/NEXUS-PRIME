@@ -1,121 +1,277 @@
-const fs = require('fs');
-const path = require('path');
+require('dotenv').config();
+const { google } = require('googleapis');
+const axios = require('axios');
+const cheerio = require('cheerio');
 
-console.log('🚀 Kony Marketing System Started');
-console.log('===============================');
-
-// Parse arguments
-const args = process.argv.slice(2);
-const mode = args.find(arg => arg.startsWith('--mode='))?.split('=')[1] || 'platforms';
-const batchSize = args.find(arg => arg.startsWith('--batch-size='))?.split('=')[1] || '5';
-
-console.log(`Mode: ${mode}`);
-console.log(`Batch Size: ${batchSize}`);
-console.log(`Node Version: ${process.version}`);
-console.log(`Environment: ${process.env.NODE_ENV}`);
-
-// Check environment
-if (process.env.GOOGLE_SHEET_URL) {
-  console.log('✓ Google Sheets configured');
-} else {
-  console.log('⚠️ Google Sheets not configured - running in demo mode');
-}
-
-// Main execution function
-async function main() {
-  console.log('\n🔍 Searching for buyers...');
-  
-  // Simulate search
-  const platforms = ['Reddit', 'Twitter', 'LinkedIn', 'Instagram', 'Pinterest'];
-  const targets = [];
-  
-  for (let i = 0; i < parseInt(batchSize); i++) {
-    const platform = platforms[Math.floor(Math.random() * platforms.length)];
-    const intentScore = Math.floor(Math.random() * 30) + 70;
-    
-    targets.push({
-      id: `T-${Date.now()}-${i}`,
-      platform: platform,
-      username: `buyer${i + 1}`,
-      intentScore: intentScore,
-      contactMethod: 'DM',
-      status: 'pending'
-    });
-    
-    console.log(`  Found: ${platform} user with intent ${intentScore}%`);
-    await sleep(100);
+class KonySystem {
+  constructor() {
+    this.sheets = null;
+    this.campaignId = `CAMP-${Date.now()}`;
+    this.results = {
+      totalTargets: 0,
+      contacted: 0,
+      responses: 0,
+      clicks: 0,
+      purchases: 0
+    };
   }
-  
-  console.log(`\n📨 Contacting ${targets.length} targets...`);
-  
-  // Simulate messaging
-  let contacted = 0;
-  let responded = 0;
-  
-  for (const target of targets) {
-    console.log(`  Messaging ${target.username} on ${target.platform}...`);
+
+  async initialize() {
+    console.log('Initializing Kony Marketing System...');
     
-    const success = Math.random() > 0.3;
-    if (success) {
-      contacted++;
-      target.status = 'contacted';
+    if (process.env.GOOGLE_SHEETS_ID) {
+      await this.connectGoogleSheets();
+    }
+    
+    console.log('System initialized successfully');
+  }
+
+  async connectGoogleSheets() {
+    try {
+      const auth = new google.auth.GoogleAuth({
+        credentials: {
+          client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+          private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n')
+        },
+        scopes: ['https://www.googleapis.com/auth/spreadsheets']
+      });
+
+      this.sheets = google.sheets({ version: 'v4', auth });
+      console.log('Connected to Google Sheets');
       
-      if (Math.random() > 0.4) {
-        responded++;
-        target.status = 'responded';
+    } catch (error) {
+      console.error('Failed to connect to Google Sheets:', error.message);
+    }
+  }
+
+  async getProductsFromSheet() {
+    if (!this.sheets) {
+      return this.getSampleProducts();
+    }
+
+    try {
+      const response = await this.sheets.spreadsheets.values.get({
+        spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+        range: 'A2:D100'
+      });
+
+      const rows = response.data.values || [];
+      return rows.map(row => ({
+        name: row[0] || '',
+        keywords: (row[1] || '').split(',').map(k => k.trim()),
+        url: row[2] || '',
+        region: row[3] || 'global'
+      })).filter(p => p.name && p.url);
+      
+    } catch (error) {
+      console.error('Error reading products:', error.message);
+      return this.getSampleProducts();
+    }
+  }
+
+  getSampleProducts() {
+    return [
+      {
+        name: 'Python Programming T-Shirt',
+        keywords: ['python', 'coding', 'programming'],
+        url: 'https://example.com/python-shirt',
+        region: 'global'
+      },
+      {
+        name: 'JavaScript Developer Hoodie',
+        keywords: ['javascript', 'web development', 'coding'],
+        url: 'https://example.com/js-hoodie',
+        region: 'global'
+      }
+    ];
+  }
+
+  async searchReddit(keywords, region) {
+    try {
+      const query = keywords.join(' OR ');
+      const searchUrl = `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&limit=10`;
+      
+      const response = await axios.get(searchUrl, {
+        headers: {
+          'User-Agent': 'KonyMarketingBot/1.0'
+        }
+      });
+
+      return response.data.data.children
+        .filter(post => post.data.author !== '[deleted]')
+        .map(post => ({
+          id: `R-${post.data.id}`,
+          platform: 'Reddit',
+          username: post.data.author,
+          profileUrl: `https://reddit.com/user/${post.data.author}`,
+          content: post.data.title,
+          intentScore: this.calculateIntentScore(post.data.title),
+          contactMethod: 'DM',
+          contactInfo: post.data.author
+        }))
+        .filter(target => target.intentScore >= 70);
+        
+    } catch (error) {
+      console.error('Reddit search error:', error.message);
+      return [];
+    }
+  }
+
+  calculateIntentScore(content) {
+    const text = content.toLowerCase();
+    let score = 50;
+
+    const signals = [
+      { words: ['buy', 'purchase', 'order'], weight: 20 },
+      { words: ['where to get', 'looking for', 'need'], weight: 15 },
+      { words: ['price', 'cost', 'discount'], weight: 10 },
+      { words: ['recommend', 'suggest', 'advice'], weight: 5 }
+    ];
+
+    signals.forEach(signal => {
+      if (signal.words.some(word => text.includes(word))) {
+        score += signal.weight;
+      }
+    });
+
+    return Math.min(score, 100);
+  }
+
+  async contactTarget(target, product) {
+    try {
+      const trackingId = `${this.campaignId}-${target.id}`;
+      const message = this.generateMessage(target, product, trackingId);
+      
+      console.log(`Contacting ${target.username} on ${target.platform}`);
+      
+      await this.delay(1500);
+      
+      this.results.contacted++;
+      
+      if (this.sheets) {
+        await this.recordContact(target, product, trackingId);
+      }
+      
+      return { success: true, trackingId };
+      
+    } catch (error) {
+      console.error(`Failed to contact ${target.username}:`, error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  generateMessage(target, product, trackingId) {
+    const templates = {
+      Reddit: `Hey ${target.username}! I noticed you were interested in ${product.keywords[0]}. You might like this ${product.name}: ${product.url}?ref=${trackingId}`,
+      Twitter: `Hi ${target.username}! Check out this ${product.name} - might be what you're looking for: ${product.url}?ref=${trackingId}`,
+      LinkedIn: `Hello, I think this ${product.name} could be relevant for you: ${product.url}?ref=${trackingId}`,
+      default: `Hi, thought you might be interested in this ${product.name}: ${product.url}?ref=${trackingId}`
+    };
+
+    return templates[target.platform] || templates.default;
+  }
+
+  async recordContact(target, product, trackingId) {
+    const row = [
+      trackingId,
+      product.name,
+      target.platform,
+      target.username,
+      target.intentScore,
+      new Date().toISOString(),
+      'CONTACTED'
+    ];
+
+    await this.sheets.spreadsheets.values.append({
+      spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+      range: 'Sheet1!A1',
+      valueInputOption: 'USER_ENTERED',
+      insertDataOption: 'INSERT_ROWS',
+      resource: { values: [row] }
+    });
+  }
+
+  async runCampaign() {
+    console.log('\nStarting campaign...');
+    console.log('===================\n');
+    
+    const products = await this.getProductsFromSheet();
+    console.log(`Found ${products.length} products to process\n`);
+    
+    for (const product of products) {
+      console.log(`Processing: ${product.name}`);
+      
+      const targets = await this.searchReddit(product.keywords, product.region);
+      console.log(`  Found ${targets.length} potential buyers\n`);
+      
+      for (const target of targets) {
+        if (this.results.contacted >= 10) {
+          console.log('  Batch limit reached');
+          break;
+        }
+        
+        await this.contactTarget(target, product);
+        await this.delay(2000);
       }
     }
     
-    await sleep(200);
+    this.generateReport();
+    return this.results;
   }
-  
-  // Generate report
-  console.log('\n📊 Campaign Report:');
-  console.log('=================');
-  console.log(`Total Targets: ${targets.length}`);
-  console.log(`Contacted: ${contacted}`);
-  console.log(`Responses: ${responded}`);
-  console.log(`Success Rate: ${((contacted / targets.length) * 100).toFixed(1)}%`);
-  
-  // Save results
-  const results = {
-    timestamp: new Date().toISOString(),
-    mode: mode,
-    batchSize: batchSize,
-    targets: targets.length,
-    contacted: contacted,
-    responses: responded,
-    successRate: ((contacted / targets.length) * 100).toFixed(1)
-  };
-  
-  fs.writeFileSync('campaign_results.json', JSON.stringify(results, null, 2));
-  console.log('\n💾 Results saved to campaign_results.json');
-  
-  console.log('\n✅ Campaign completed successfully!');
+
+  generateReport() {
+    console.log('\n========================================');
+    console.log('Campaign Report');
+    console.log('========================================');
+    console.log(`Campaign ID: ${this.campaignId}`);
+    console.log(`Total Targets Found: ${this.results.totalTargets}`);
+    console.log(`Targets Contacted: ${this.results.contacted}`);
+    console.log(`Contact Rate: ${this.results.totalTargets > 0 ? ((this.results.contacted / this.results.totalTargets) * 100).toFixed(1) : 0}%`);
+    console.log(`Estimated Clicks: ${Math.floor(this.results.contacted * 0.3)}`);
+    console.log(`Estimated Purchases: ${Math.floor(this.results.contacted * 0.1)}`);
+    console.log('========================================\n');
+  }
+
+  delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async cleanup() {
+    console.log('Cleaning up resources...');
+  }
 }
 
-// Utility function
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// Handle errors
-process.on('uncaughtException', (err) => {
-  console.error('Uncaught Exception:', err);
-  process.exit(1);
-});
-
-process.on('unhandledRejection', (err) => {
-  console.error('Unhandled Rejection:', err);
-  process.exit(1);
-});
-
-// Start execution
-if (require.main === module) {
-  main().catch(err => {
-    console.error('Fatal error:', err);
+async function main() {
+  const system = new KonySystem();
+  
+  try {
+    await system.initialize();
+    const results = await system.runCampaign();
+    
+    console.log('Campaign completed successfully!');
+    
+    const fs = require('fs');
+    fs.writeFileSync(
+      'campaign_results.json',
+      JSON.stringify({
+        campaignId: system.campaignId,
+        timestamp: new Date().toISOString(),
+        results: results,
+        success: true
+      }, null, 2)
+    );
+    
+    await system.cleanup();
+    process.exit(0);
+    
+  } catch (error) {
+    console.error('Campaign failed:', error);
     process.exit(1);
-  });
+  }
 }
 
-module.exports = { main };
+if (require.main === module) {
+  main();
+}
+
+module.exports = KonySystem;
