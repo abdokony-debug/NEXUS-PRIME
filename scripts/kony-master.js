@@ -1,57 +1,68 @@
+#!/usr/bin/env node
+// scripts/kony-master.js
+
 require('dotenv').config();
-const KonyMarketing = require('../src/index');
-const { log } = require('../src/utils/helpers');
+const { exec } = require('child_process');
+const fs = require('fs');
 
 async function main() {
-  console.log('='.repeat(60));
-  console.log('🚀 KONY MARKETING SYSTEM - الإطلاق النهائي');
-  console.log('🎯 نظام البحث عن المشترين الحقيقيين والمراسلة الذكية');
-  console.log('='.repeat(60));
+  console.log('🚀 نظام Kony للتسويق - سكربت التشغيل الرئيسي');
+  console.log('='.repeat(50));
   
-  log.info('🔍 فحص الإعدادات...');
+  // قراءة الإعدادات من environment
+  const mode = process.env.KONY_CAMPAIGN_MODE || 'standard';
+  const batchSize = process.env.KONY_BATCH_SIZE || 10;
+  const region = process.env.KONY_TARGET_REGION || 'global';
+  const platforms = process.env.KONY_PLATFORMS || 'all';
   
-  // التحقق من الإعدادات المطلوبة
-  const requiredEnvVars = [
-    'GOOGLE_SHEETS_ID',
-    'GOOGLE_SERVICE_ACCOUNT_EMAIL',
-    'GOOGLE_PRIVATE_KEY'
-  ];
+  console.log('📊 إعدادات الحملة:');
+  console.log(`- الوضع: ${mode}`);
+  console.log(`- حجم الدفعة: ${batchSize}`);
+  console.log(`- المنطقة: ${region}`);
+  console.log(`- المنصات: ${platforms}`);
+  console.log('='.repeat(50));
   
-  const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+  // تحديد ملف التشغيل
+  let mainFile;
   
-  if (missingVars.length > 0) {
-    console.error('❌ إعدادات مفقودة:', missingVars.join(', '));
-    console.error('📝 يرجى تعبئة ملف .env بناءً على .env.example');
+  if (fs.existsSync('kony-processor.js')) {
+    mainFile = 'kony-processor.js';
+  } else if (fs.existsSync('src/index.js')) {
+    mainFile = 'src/index.js';
+  } else {
+    console.error('❌ لم يتم العثور على ملف التشغيل الرئيسي');
     process.exit(1);
   }
   
-  log.info('✅ جميع الإعدادات صحيحة');
+  console.log(`📜 تشغيل: ${mainFile}`);
   
-  try {
-    // بدء النظام
-    await KonyMarketing.start();
+  // تشغيل النظام
+  const command = `node ${mainFile} --mode=${mode} --batch-size=${batchSize} --region=${region}`;
+  
+  exec(command, (error, stdout, stderr) => {
+    if (error) {
+      console.error(`❌ خطأ: ${error.message}`);
+      process.exit(1);
+    }
     
-    // معالجة إشارات الإيقاف
-    process.on('SIGINT', async () => {
-      console.log('\n🛑 تلقي إشارة إيقاف...');
-      await KonyMarketing.stop();
-      process.exit(0);
-    });
+    if (stderr) {
+      console.error(`⚠️  تحذير: ${stderr}`);
+    }
     
-    process.on('SIGTERM', async () => {
-      console.log('\n🛑 تلقي إشارة إنهاء...');
-      await KonyMarketing.stop();
-      process.exit(0);
-    });
-    
-  } catch (error) {
-    log.error('❌ خطأ فادح في النظام:', error);
-    process.exit(1);
-  }
+    console.log(stdout);
+    console.log('✅ اكتمل التشغيل بنجاح');
+  });
 }
 
-// تشغيل النظام
-main().catch(error => {
-  console.error('💥 خطأ في الإطلاق:', error);
-  process.exit(1);
+// معالجة إشارات الإيقاف
+process.on('SIGINT', () => {
+  console.log('\n🛑 تلقي إشارة إيقاف...');
+  process.exit(0);
 });
+
+process.on('SIGTERM', () => {
+  console.log('\n🛑 تلقي إشارة إنهاء...');
+  process.exit(0);
+});
+
+main().catch(console.error);
