@@ -1,12 +1,11 @@
 node_modules/
 .env
 *.log
-logs/
 .DS_Store
 .vscode/
-coverage/
 .idea/
 *.tmp
-*.temp
-reports/
+campaign_results.json
 output/
+reports/
+logs/
