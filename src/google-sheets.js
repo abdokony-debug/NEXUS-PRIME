@@ -8,33 +8,41 @@ class GoogleSheets {
   }
 
   async connect() {
-    const auth = new google.auth.GoogleAuth({
-      credentials: {
-        client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-        private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n')
-      },
-      scopes: ['https://www.googleapis.com/auth/spreadsheets']
-    });
+    try {
+      const auth = new google.auth.GoogleAuth({
+        credentials: {
+          client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+          private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n')
+        },
+        scopes: ['https://www.googleapis.com/auth/spreadsheets']
+      });
 
-    this.client = google.sheets({ version: 'v4', auth });
-    console.log('Connected to Google Sheets');
+      this.client = google.sheets({ version: 'v4', auth });
+      console.log('Connected to Google Sheets');
+    } catch (error) {
+      console.error('Error connecting to Google Sheets:', error);
+    }
   }
 
   async getProducts() {
-    const response = await this.client.spreadsheets.values.get({
-      spreadsheetId: this.sheetId,
-      range: `${this.sheetName}!A2:D1000`
-    });
+    try {
+      const response = await this.client.spreadsheets.values.get({
+        spreadsheetId: this.sheetId,
+        range: `${this.sheetName}!A2:D1000`
+      });
 
-    const rows = response.data.values || [];
-    
-    return rows.map((row, index) => ({
-      id: `P-${index + 1}`,
-      name: row[0] || '',
-      keywords: (row[1] || '').split(',').map(k => k.trim()),
-      url: row[2] || '',
-      region: row[3] || 'global'
-    })).filter(p => p.name && p.url);
+      const rows = response.data.values || [];
+      return rows.map((row, index) => ({
+        id: `P-${index + 1}`,
+        name: row[0] || '',
+        keywords: (row[1] || '').split(',').map(k => k.trim()),
+        url: row[2] || '',
+        region: row[3] || 'global'
+      })).filter(p => p.name && p.url);
+    } catch (error) {
+      console.error('Error getting products from Google Sheets:', error);
+      return [];
+    }
   }
 
   async recordTarget(data) {
@@ -52,13 +60,17 @@ class GoogleSheets {
       data.timestamp
     ];
 
-    await this.client.spreadsheets.values.append({
-      spreadsheetId: this.sheetId,
-      range: `${this.sheetName}!A2`,
-      valueInputOption: 'USER_ENTERED',
-      insertDataOption: 'INSERT_ROWS',
-      resource: { values: [row] }
-    });
+    try {
+      await this.client.spreadsheets.values.append({
+        spreadsheetId: this.sheetId,
+        range: `${this.sheetName}!A2`,
+        valueInputOption: 'USER_ENTERED',
+        insertDataOption: 'INSERT_ROWS',
+        resource: { values: [row] }
+      });
+    } catch (error) {
+      console.error('Error recording target in Google Sheets:', error);
+    }
   }
 
   async updateStats(stats) {
@@ -74,42 +86,43 @@ class GoogleSheets {
       ]
     ];
 
-    await this.client.spreadsheets.values.update({
-      spreadsheetId: this.sheetId,
-      range: `${this.sheetName}!T2:Z2`,
-      valueInputOption: 'USER_ENTERED',
-      resource: { values }
-    });
+    try {
+      await this.client.spreadsheets.values.update({
+        spreadsheetId: this.sheetId,
+        range: `${this.sheetName}!T2:Z2`,
+        valueInputOption: 'USER_ENTERED',
+        resource: { values }
+      });
+    } catch (error) {
+      console.error('Error updating stats in Google Sheets:', error);
+    }
   }
 
   async updateTargetStatus(targetId, status, updates = {}) {
-    // Find and update target row
-    const response = await this.client.spreadsheets.values.get({
-      spreadsheetId: this.sheetId,
-      range: `${this.sheetName}!A2:K1000`
-    });
+    try {
+      const response = await this.client.spreadsheets.values.get({
+        spreadsheetId: this.sheetId,
+        range: `${this.sheetName}!A2:K1000`
+      });
 
-    const rows = response.data.values || [];
-    
-    for (let i = 0; i < rows.length; i++) {
-      if (rows[i][1] === targetId) {
-        const rowIndex = i + 2;
-        
-        const updateRange = `${this.sheetName}!J${rowIndex}:K${rowIndex}`;
-        const updateValues = [[
-          status,
-          new Date().toISOString()
-        ]];
-        
-        await this.client.spreadsheets.values.update({
-          spreadsheetId: this.sheetId,
-          range: updateRange,
-          valueInputOption: 'USER_ENTERED',
-          resource: { values: updateValues }
-        });
-        
-        break;
+      const rows = response.data.values || [];
+      for (let i = 0; i < rows.length; i++) {
+        if (rows[i][1] === targetId) {
+          const rowIndex = i + 2;
+          const updateRange = `${this.sheetName}!J${rowIndex}:K${rowIndex}`;
+          const updateValues = [[status, new Date().toISOString()]];
+
+          await this.client.spreadsheets.values.update({
+            spreadsheetId: this.sheetId,
+            range: updateRange,
+            valueInputOption: 'USER_ENTERED',
+            resource: { values: updateValues }
+          });
+          break;
+        }
       }
+    } catch (error) {
+      console.error('Error updating target status in Google Sheets:', error);
     }
   }
 }
