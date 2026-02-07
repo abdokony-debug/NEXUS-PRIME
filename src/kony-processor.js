@@ -1,255 +1,158 @@
-const GoogleSheetsManager = require('./google-sheets');
-const SearcherFactory = require('./searchers/general-searcher');
-const MessageGenerator = require('./messaging/message-generator');
-const MessageSender = require('./messaging/message-sender');
-const LinkTracker = require('./tracking/link-tracker');
-const { log, delay } = require('./utils/helpers');
-const config = require('./utils/config');
+const GoogleSheets = require('./google-sheets');
+const Searcher = require('./searcher');
+const Messenger = require('./messenger');
+const Tracker = require('./tracker');
 
 class KonyProcessor {
-  constructor() {
+  constructor(config = {}) {
+    this.config = {
+      mode: config.mode || 'standard',
+      batchSize: config.batchSize || 10,
+      region: config.region || 'global',
+      platforms: config.platforms || 'all',
+      ...config
+    };
+    
     this.sheets = null;
     this.searcher = null;
-    this.messageGen = null;
-    this.messageSender = null;
+    this.messenger = null;
     this.tracker = null;
-    this.currentCampaign = null;
+    this.results = {
+      totalTargets: 0,
+      contacted: 0,
+      responses: 0,
+      clicks: 0,
+      purchases: 0,
+      revenue: 0
+    };
   }
 
   async initialize() {
-    log.info('🔧 تهيئة نظام Kony...');
+    console.log('Initializing Kony Marketing System...');
     
-    // تهيئة Google Sheets
-    this.sheets = new GoogleSheetsManager();
-    await this.sheets.initialize();
+    this.sheets = new GoogleSheets();
+    await this.sheets.connect();
     
-    // تهيئة محرك البحث
-    this.searcher = new SearcherFactory();
+    this.searcher = new Searcher(this.config);
+    this.messenger = new Messenger(this.config);
+    this.tracker = new Tracker();
     
-    // تهيئة توليد الرسائل
-    this.messageGen = new MessageGenerator();
-    
-    // تهيئة إرسال الرسائل
-    this.messageSender = new MessageSender();
-    
-    // تهيئة التتبع
-    this.tracker = new LinkTracker();
-    
-    log.info('✅ تمت تهيئة النظام');
+    console.log('System initialized');
   }
 
-  async runCompleteWorkflow() {
-    const campaignId = `CAMP-${Date.now()}`;
-    this.currentCampaign = {
-      id: campaignId,
-      startTime: new Date(),
-      targets: [],
-      stats: {
-        found: 0,
-        contacted: 0,
-        responded: 0,
-        clicked: 0,
-        purchased: 0
-      }
-    };
+  async runCampaign() {
+    console.log('Starting campaign...');
     
-    log.info(`🎯 بدء الحملة ${campaignId}`);
-    
-    // 1. قراءة المنتجات
-    const products = await this.readProducts();
-    
-    // 2. معالجة كل منتج
-    for (const product of products) {
-      await this.processProduct(product, campaignId);
-    }
-    
-    // 3. تحديث الإحصائيات
-    await this.updateStatistics();
-    
-    // 4. إنشاء التقرير
-    const report = await this.generateReport();
-    
-    this.currentCampaign.endTime = new Date();
-    this.currentCampaign.report = report;
-    
-    log.info(`✅ اكتملت الحملة ${campaignId}`);
-    
-    return report;
-  }
-
-  async readProducts() {
-    log.info('📖 قراءة المنتجات من الشيت...');
-    
+    // 1. Read products from sheet
     const products = await this.sheets.getProducts();
     
     if (products.length === 0) {
-      log.warn('⚠️  لم يتم العثور على منتجات في الشيت');
+      console.log('No products found');
+      return this.results;
     }
     
-    log.info(`📦 تم العثور على ${products.length} منتج`);
+    console.log(`Found ${products.length} products`);
     
-    return products.map(p => ({
-      name: p[0] || '',        // A: Product_Name
-      keywords: (p[1] || '').split(',').map(k => k.trim()), // B: Keywords
-      url: p[2] || '',         // C: Product_URL
-      region: p[3] || 'Global' // D: Region
-    })).filter(p => p.name && p.url);
+    // 2. Process each product
+    for (const product of products) {
+      await this.processProduct(product);
+    }
+    
+    // 3. Update statistics
+    await this.updateStatistics();
+    
+    return this.results;
   }
 
-  async processProduct(product, campaignId) {
-    log.info(`🎯 معالجة المنتج: ${product.name}`);
+  async processProduct(product) {
+    console.log(`Processing product: ${product.name}`);
     
-    // البحث عن أهداف
-    const targets = await this.findTargets(product);
-    this.currentCampaign.stats.found += targets.length;
+    // Find targets for this product
+    const targets = await this.searcher.findTargets(product);
     
     if (targets.length === 0) {
-      log.warn(`⚠️  لم يتم العثور على أهداف للمنتج: ${product.name}`);
+      console.log(`No targets found for ${product.name}`);
       return;
     }
     
-    log.info(`🔍 تم العثور على ${targets.length} هدف للمنتج ${product.name}`);
+    console.log(`Found ${targets.length} targets`);
     
-    // مراسلة الأهداف
+    // Contact targets
     for (const target of targets) {
-      await this.contactTarget(target, product, campaignId);
-      await delay(config.DELAY_BETWEEN_MESSAGES);
-    }
-  }
-
-  async findTargets(product) {
-    const { keywords, region } = product;
-    const maxTargets = config.MAX_TARGETS_PER_PRODUCT;
-    
-    const allTargets = [];
-    
-    // البحث في جميع المنصات
-    const platforms = ['reddit', 'twitter', 'linkedin', 'instagram', 'pinterest'];
-    
-    for (const platform of platforms) {
-      try {
-        const platformTargets = await this.searcher.search(platform, {
-          keywords,
-          region,
-          limit: Math.floor(maxTargets / platforms.length)
-        });
-        
-        // تصفية حسب درجة النية
-        const filteredTargets = platformTargets.filter(t => 
-          t.intentScore >= config.MIN_INTENT_SCORE
-        );
-        
-        allTargets.push(...filteredTargets);
-        
-        log.info(`📍 ${platform}: ${filteredTargets.length} هدف`);
-        
-        if (allTargets.length >= maxTargets) {
-          break;
-        }
-        
-      } catch (error) {
-        log.error(`❌ خطأ في البحث على ${platform}:`, error.message);
+      if (this.results.contacted >= this.config.batchSize) {
+        break;
       }
+      
+      await this.contactTarget(target, product);
+      await this.delay(2000); // Rate limiting
     }
-    
-    return allTargets.slice(0, maxTargets);
   }
 
-  async contactTarget(target, product, campaignId) {
-    const targetId = `T-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-    
+  async contactTarget(target, product) {
     try {
-      // توليد رسالة مخصصة
-      const message = await this.messageGen.createMessage(target, product);
+      // Generate tracking link
+      const trackingLink = this.tracker.generateLink(
+        product.url,
+        target.id,
+        product.id
+      );
       
-      // إنشاء رابط تتبع
-      const trackingLink = await this.tracker.createLink(product.url, {
-        campaignId,
-        targetId,
-        product: product.name
-      });
+      // Generate message
+      const message = this.messenger.createMessage(target, product, trackingLink);
       
-      // إضافة رابط التتبع للرسالة
-      const finalMessage = message.replace('{PRODUCT_URL}', trackingLink.shortUrl);
-      
-      // إرسال الرسالة
-      const sent = await this.messageSender.send(target, finalMessage);
+      // Send message
+      const sent = await this.messenger.send(target, message);
       
       if (sent) {
-        this.currentCampaign.stats.contacted++;
+        this.results.contacted++;
         
-        // تسجيل في الشيت
-        await this.sheets.addTarget({
-          targetId,
-          productName: product.name,
-          keywords: product.keywords.join(', '),
-          productUrl: product.url,
-          region: product.region,
+        // Record in sheet
+        await this.sheets.recordTarget({
+          targetId: target.id,
+          productId: product.id,
           platform: target.platform,
           username: target.username,
           profileUrl: target.profileUrl,
           intentScore: target.intentScore,
           contactMethod: target.contactMethod,
-          contactInfo: target.contactInfo,
-          messageContent: finalMessage,
-          campaignId,
-          status: 'CONTACTED'
+          messageContent: message,
+          trackingLink: trackingLink.shortUrl,
+          status: 'CONTACTED',
+          timestamp: new Date().toISOString()
         });
         
-        log.info(`📨 تم إرسال رسالة إلى ${target.username} على ${target.platform}`);
-        
-        // إضافة للتتبع
-        this.tracker.trackMessageSent(targetId, trackingLink.id);
-        
-      } else {
-        log.warn(`⚠️  فشل إرسال الرسالة إلى ${target.username}`);
+        console.log(`Message sent to ${target.username} on ${target.platform}`);
       }
       
     } catch (error) {
-      log.error(`❌ خطأ في مراسلة ${target.username}:`, error.message);
+      console.error(`Failed to contact ${target.username}:`, error.message);
     }
   }
 
   async updateStatistics() {
-    const stats = this.currentCampaign.stats;
+    // Update sheet with campaign results
+    await this.sheets.updateStats({
+      totalTargets: this.results.totalTargets,
+      contacted: this.results.contacted,
+      responses: this.results.responses,
+      clicks: this.results.clicks,
+      purchases: this.results.purchases,
+      revenue: this.results.revenue,
+      lastUpdate: new Date().toISOString()
+    });
     
-    const summary = [
-      stats.found,          // T: Total_Targets
-      stats.contacted,      // U: Contacted
-      0,                    // V: Responses (يتم تحديثه لاحقاً)
-      0,                    // W: Clicks (يتم تحديثه لاحقاً)
-      0,                    // X: Purchases (يتم تحديثه لاحقاً)
-      stats.contacted > 0 ? ((stats.contacted / stats.found) * 100).toFixed(2) : '0.00', // Y: Success_Rate
-      new Date().toISOString() // Z: Last_Update
-    ];
-    
-    await this.sheets.updateStatistics(summary);
+    console.log('Statistics updated');
   }
 
-  async generateReport() {
-    const duration = this.currentCampaign.endTime - this.currentCampaign.startTime;
-    const minutes = (duration / 1000 / 60).toFixed(1);
-    
-    return {
-      campaignId: this.currentCampaign.id,
-      duration: `${minutes} دقيقة`,
-      startTime: this.currentCampaign.startTime,
-      endTime: this.currentCampaign.endTime,
-      ...this.currentCampaign.stats,
-      clickThroughRate: this.currentCampaign.stats.contacted > 0 ? 
-        ((this.currentCampaign.stats.clicked / this.currentCampaign.stats.contacted) * 100).toFixed(2) : '0.00'
-    };
-  }
-
-  async getStatistics() {
-    return await this.sheets.getCurrentStats();
+  delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   async cleanup() {
-    if (this.messageSender) {
-      await this.messageSender.cleanup();
+    if (this.messenger) {
+      await this.messenger.cleanup();
     }
-    log.info('🧹 تم تنظيف الموارد');
+    console.log('Cleanup completed');
   }
 }
 
