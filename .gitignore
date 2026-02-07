@@ -1,11 +1,28 @@
+# Node.js dependencies
 node_modules/
+
+# Environment variables
 .env
+
+# Log files
 *.log
+
+# macOS folder settings
 .DS_Store
+
+# Visual Studio Code settings
 .vscode/
+
+# IntelliJ IDEA settings
 .idea/
+
+# Temporary files
 *.tmp
+
+# Campaign results file
 campaign_results.json
+
+# Output directories
 output/
 reports/
 logs/
