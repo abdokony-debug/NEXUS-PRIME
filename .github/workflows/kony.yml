@@ -50,7 +50,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: 'npm'
       
       - name: Create package.json
         run: |
@@ -58,52 +57,37 @@ jobs:
 {
   "name": "kony-marketing",
   "version": "1.0.0",
-  "type": "commonjs",
   "main": "src/index.js",
   "dependencies": {
-    "axios": "^1.7.2",
-    "cheerio": "^1.0.0-rc.12",
-    "googleapis": "^140.0.0",
-    "dotenv": "^16.4.5"
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0",
+    "googleapis": "^128.0.0",
+    "dotenv": "^16.3.0"
   }
 }
 EOF
       
       - name: Install dependencies
-        run: npm ci --ignore-scripts
+        run: npm install
       
-      - name: Create config.js
+      - name: Create config file
         run: |
-          cat > config.js << EOF
+          cat > config.js << 'EOF'
 module.exports = {
-  campaignType: '${{ github.event.inputs.campaign_type || 'standard' }}',
-  batchSize: parseInt('${{ github.event.inputs.batch_size || '10' }}'),
-  region: '${{ github.event.inputs.region || 'global' }}',
-  platforms: '${{ github.event.inputs.platforms || 'all' }}'
+  campaignType: '${{ github.event.inputs.campaign_type }}',
+  batchSize: '${{ github.event.inputs.batch_size }}',
+  region: '${{ github.event.inputs.region }}',
+  platforms: '${{ github.event.inputs.platforms }}'
 };
 EOF
       
-      - name: Setup Google Auth (if secrets provided)
-        env:
-          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
-          GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
-        run: |
-          if [ -n "$GOOGLE_PRIVATE_KEY" ] && [ -n "$GOOGLE_SERVICE_ACCOUNT_EMAIL" ]; then
-            mkdir -p auth
-            echo "$GOOGLE_PRIVATE_KEY" | sed 's/\\n/\n/g' > auth/service-key.json
-            echo "GOOGLE_APPLICATION_CREDENTIALS=auth/service-key.json" >> $GITHUB_ENV
-            echo "✓ Google auth setup complete"
-          else
-            echo "No Google secrets - demo mode"
-          fi
-      
-      - name: Create src directory and main file
+      - name: Create main file
         run: |
           mkdir -p src
           cat > src/index.js << 'EOF'
-const dotenv = require('dotenv').config();
+require('dotenv').config();
 const { google } = require('googleapis');
-const config = require('../config.js');
+const config = require('../config');
 
 console.log('Kony Marketing System - Production Ready');
 console.log('========================================');
@@ -113,14 +97,17 @@ console.log('Region:', config.region);
 console.log('Platforms:', config.platforms);
 
 async function initializeSheets() {
-  if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+  if (!process.env.GOOGLE_SHEETS_ID) {
     console.log('Running in demo mode - No Google Sheets configured');
     return null;
   }
 
   try {
     const auth = new google.auth.GoogleAuth({
-      keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+      credentials: {
+        client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n')
+      },
       scopes: ['https://www.googleapis.com/auth/spreadsheets']
     });
 
@@ -133,25 +120,23 @@ async function initializeSheets() {
   }
 }
 
-async function readProducts(sheets, sheetsId) {
-  if (!sheets || !sheetsId) {
-    console.log('Using demo products');
+async function readProducts(sheets) {
+  if (!sheets) {
     return [
-      { name: 'Python T-Shirt', keywords: ['python', 'coding'], url: 'https://example.com/python-tshirt', region: 'global' },
-      { name: 'JavaScript Hoodie', keywords: ['javascript', 'webdev'], url: 'https://example.com/js-hoodie', region: 'global' },
-      { name: 'DevOps Mug', keywords: ['devops', 'ci-cd'], url: 'https://example.com/devops-mug', region: 'europe' }
+      { name: 'Python T-Shirt', keywords: ['python', 'coding'], url: 'https://example.com/python', region: 'global' },
+      { name: 'JavaScript Hoodie', keywords: ['javascript', 'webdev'], url: 'https://example.com/js', region: 'global' }
     ];
   }
 
   try {
     const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: sheetsId,
-      range: 'Sheet1!A2:D100'
+      spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+      range: 'A2:D100'
     });
 
     return response.data.values.map(row => ({
       name: row[0],
-      keywords: row[1] ? row[1].toString().split(',').map(k => k.trim()) : [],
+      keywords: row[1] ? row[1].split(',').map(k => k.trim()) : [],
       url: row[2],
       region: row[3] || 'global'
     }));
@@ -162,14 +147,12 @@ async function readProducts(sheets, sheetsId) {
 }
 
 async function searchBuyers(product, region, platforms) {
-  console.log(`🔍 Searching buyers for: ${product.name} (${region})`);
+  console.log(`Searching buyers for: ${product.name}`);
   
   const mockTargets = [
-    { platform: 'Reddit', username: 'r_python_dev', intent: 92, region },
-    { platform: 'Twitter', username: '@js_dev_guy', intent: 85, region },
-    { platform: 'LinkedIn', username: 'john_devops_pro', intent: 88, region },
-    { platform: 'Reddit', username: 'r_webdev', intent: 78, region },
-    { platform: 'Instagram', username: 'codefashion_', intent: 91, region }
+    { platform: 'Reddit', username: 'dev_user', intent: 92, region: region },
+    { platform: 'Twitter', username: 'tech_guy', intent: 85, region: region },
+    { platform: 'LinkedIn', username: 'professional', intent: 88, region: region }
   ];
 
   return mockTargets.filter(target => 
@@ -178,23 +161,22 @@ async function searchBuyers(product, region, platforms) {
 }
 
 async function contactTarget(target, product, trackingId) {
-  console.log(`📨 Contacting ${target.username} on ${target.platform}`);
+  console.log(`Contacting ${target.username} on ${target.platform}`);
   
-  const message = `Hi ${target.username}, check out this ${product.name}: ${product.url}?ref=${trackingId} #ad`;
+  const message = `Hi ${target.username}, check out this ${product.name}: ${product.url}?ref=${trackingId}`;
   
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 500));
+  await new Promise(resolve => setTimeout(resolve, 1000));
   
   return {
-    success: Math.random() > 0.1, // 90% success
-    messageId: `MSG-${Date.now()}-${Math.floor(Math.random()*1000)}`,
+    success: true,
+    messageId: `MSG-${Date.now()}`,
     timestamp: new Date().toISOString()
   };
 }
 
-async function recordResult(sheets, sheetsId, data) {
-  if (!sheets || !sheetsId) {
-    console.log('📝 Result logged locally:', `${data.username} - ${data.status}`);
+async function recordResult(sheets, data) {
+  if (!sheets) {
+    console.log('Result recorded locally:', data.targetId);
     return;
   }
 
@@ -210,119 +192,98 @@ async function recordResult(sheets, sheetsId, data) {
     ]];
 
     await sheets.spreadsheets.values.append({
-      spreadsheetId: sheetsId,
-      range: 'Sheet1!A:F',
+      spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+      range: 'Sheet1!A1',
       valueInputOption: 'USER_ENTERED',
       insertDataOption: 'INSERT_ROWS',
       resource: { values }
     });
-    console.log('✅ Recorded to Sheets');
   } catch (error) {
-    console.error('Record error:', error.message);
+    console.error('Error recording result:', error.message);
   }
 }
 
 async function main() {
-  const sheetsId = process.env.GOOGLE_SHEETS_ID;
   const sheets = await initializeSheets();
-  const products = await readProducts(sheets, sheetsId);
+  const products = await readProducts(sheets);
   
-  console.log(`\n📦 Found ${products.length} products to process\n`);
+  console.log(`\nFound ${products.length} products to process`);
   
   let totalTargets = 0;
   let totalContacted = 0;
-  let successfulContacts = 0;
   
   for (const product of products) {
-    if (config.region !== 'global' && product.region !== config.region) {
-      console.log(`⏭️ Skipping ${product.name} (wrong region)`);
-      continue;
-    }
-    
     const targets = await searchBuyers(product, config.region, config.platforms);
-    console.log(`🎯 ${targets.length} targets for ${product.name}`);
+    console.log(`Found ${targets.length} targets for ${product.name}`);
     
-    for (const target of targets.slice(0, config.batchSize)) {
-      if (totalContacted >= config.batchSize) {
-        console.log('🛑 Batch size limit reached');
+    for (const target of targets) {
+      if (totalContacted >= parseInt(config.batchSize)) {
+        console.log('Batch size limit reached');
         break;
       }
       
-      const trackingId = `KONY-${Date.now()}-${target.platform}-${target.username.slice(0,8)}`;
+      const trackingId = `KONY-${Date.now()}-${target.username}`;
       const result = await contactTarget(target, product, trackingId);
       
-      totalContacted++;
-      
-      await recordResult(sheets, sheetsId, {
-        targetId: trackingId,
-        productName: product.name,
-        platform: target.platform,
-        username: target.username,
-        intentScore: target.intent,
-        status: result.success ? 'CONTACTED_SUCCESS' : 'FAILED'
-      });
-      
       if (result.success) {
-        successfulContacts++;
-        console.log(`✅ ${target.username} (${target.intent}%)`);
-      } else {
-        console.log(`❌ ${target.username} failed`);
+        totalContacted++;
+        
+        await recordResult(sheets, {
+          targetId: trackingId,
+          productName: product.name,
+          platform: target.platform,
+          username: target.username,
+          intentScore: target.intent,
+          status: 'CONTACTED'
+        });
+        
+        console.log(`✓ Contacted ${target.username}`);
       }
       
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
     
     totalTargets += targets.length;
-    if (totalContacted >= config.batchSize) break;
   }
   
   console.log('\n========================================');
-  console.log('🏁 Campaign Summary:');
-  console.log(`📦 Products Processed: ${products.length}`);
-  console.log(`🎯 Total Targets Found: ${totalTargets}`);
-  console.log(`📨 Targets Contacted: ${totalContacted}`);
-  console.log(`✅ Successful: ${successfulContacts}`);
-  console.log(`📊 Success Rate: ${((successfulContacts / totalContacted) * 100).toFixed(1)}%`);
+  console.log('Campaign Summary:');
+  console.log(`Products Processed: ${products.length}`);
+  console.log(`Total Targets Found: ${totalTargets}`);
+  console.log(`Targets Contacted: ${totalContacted}`);
+  console.log(`Success Rate: ${((totalContacted / totalTargets) * 100).toFixed(1)}%`);
   console.log('========================================');
   
-  // Save summary
-  const summary = {
-    campaignType: config.campaignType,
-    timestamp: new Date().toISOString(),
-    stats: { totalTargets, totalContacted, successfulContacts, successRate: ((successfulContacts / totalContacted) * 100).toFixed(1) }
-  };
-  require('fs').writeFileSync('campaign_results.json', JSON.stringify(summary, null, 2));
-  
-  return summary;
+  return { success: true, contacted: totalContacted, targets: totalTargets };
 }
 
 main().catch(error => {
-  console.error('💥 Fatal error:', error.message);
+  console.error('Fatal error:', error);
   process.exit(1);
 });
 EOF
       
       - name: Run Kony System
         run: |
-          echo "🚀 Starting Kony Marketing System..."
-          echo "Campaign: ${{ github.event.inputs.campaign_type || 'standard' }}"
-          echo "Batch Size: ${{ github.event.inputs.batch_size || 10 }}"
-          echo "Region: ${{ github.event.inputs.region || 'global' }}"
-          echo "Platforms: ${{ github.event.inputs.platforms || 'all' }}"
+          echo "Starting Kony Marketing System..."
+          echo "Campaign Type: ${{ github.event.inputs.campaign_type }}"
+          echo "Batch Size: ${{ github.event.inputs.batch_size }}"
+          echo "Region: ${{ github.event.inputs.region }}"
+          echo "Platforms: ${{ github.event.inputs.platforms }}"
           echo ""
           node src/index.js
         env:
           GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
+          GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
           NODE_ENV: production
       
-      - name: Upload results
+      - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kony-results
+          name: kony-logs
           path: |
-            config.js
-            src/index.js
+            *.log
             campaign_results.json
-            auth/service-key.json
-          retention-days: 30
+          retention-days: 7
