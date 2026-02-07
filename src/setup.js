@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 function setupProject() {
-  console.log('Setting up Kony Marketing project...');
+  console.log('Setting up Kony Marketing project...\n');
   
   const files = {
     'package.json': `{
@@ -40,13 +40,20 @@ NODE_ENV=production`
   };
   
   Object.entries(files).forEach(([filename, content]) => {
-    if (!fs.existsSync(filename)) {
-      fs.writeFileSync(filename, content);
-      console.log(`Created ${filename}`);
+    const filePath = path.join(__dirname, filename);
+    if (!fs.existsSync(filePath)) {
+      try {
+        fs.writeFileSync(filePath, content);
+        console.log(`✓ Created ${filename}`);
+      } catch (error) {
+        console.error(`✗ Failed to create ${filename}: ${error.message}`);
+      }
+    } else {
+      console.log(`✗ ${filename} already exists.`);
     }
   });
   
-  console.log('Setup complete. Run: npm install && npm start');
+  console.log('\nSetup complete. Run: npm install && npm start');
 }
 
 if (require.main === module) {
