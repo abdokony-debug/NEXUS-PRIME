@@ -1,62 +1,7 @@
-name: Kony Marketing System
-
-on:
-  workflow_dispatch:
-    inputs:
-      campaign_mode:
-        description: 'Campaign Mode'
-        required: true
-        default: 'manual'
-        type: choice
-        options:
-          - manual
-          - standard
-          - aggressive
-
+name: Kony
+on: workflow_dispatch
 jobs:
-  run_campaign:
+  kony:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-      
-      - name: Run Kony System
-        run: |
-          echo "Starting Kony Marketing System"
-          echo "Campaign Mode: ${{ github.event.inputs.campaign_mode }}"
-          echo ""
-          
-          if [ -f "index.js" ]; then
-            node index.js --mode "${{ github.event.inputs.campaign_mode }}"
-          else
-            echo "Creating minimal execution file..."
-            cat > kony_run.js << 'EOS'
-console.log("KONY MARKETING SYSTEM - MANUAL EXECUTION");
-console.log("========================================");
-console.log("Mode:", process.argv[2] || "manual");
-console.log("Time:", new Date().toISOString());
-console.log("");
-console.log("Executing campaign steps:");
-console.log("1. Loading configuration...");
-console.log("2. Analyzing market...");
-console.log("3. Processing targets...");
-console.log("4. Generating report...");
-console.log("");
-console.log("✅ Campaign completed successfully!");
-console.log("📊 Results: 10 targets processed");
-console.log("========================================");
-EOS
-            node kony_run.js "${{ github.event.inputs.campaign_mode }}"
-          fi
-      
-      - name: Create result file
-        run: |
-          echo "Kony Campaign Results" > results.txt
-          echo "Mode: ${{ github.event.inputs.campaign_mode }}" >> results.txt
-          echo "Status: Completed" >> results.txt
-          date >> results.txt
+      - run: echo "Running"
