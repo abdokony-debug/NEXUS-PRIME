@@ -47,10 +47,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-repo/kony-ai-marketing.git"
+    "url": "https://github.com/your-username/kony-ai-marketing.git"
   },
   "bugs": {
-    "url": "https://github.com/your-repo/kony-ai-marketing/issues"
+    "url": "https://github.com/your-username/kony-ai-marketing/issues"
   },
-  "homepage": "https://github.com/your-repo/kony-ai-marketing#readme"
+  "homepage": "https://github.com/your-username/kony-ai-marketing#readme"
 }
