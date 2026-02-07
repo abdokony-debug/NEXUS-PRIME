@@ -1,4 +1,5 @@
 name: Kony Marketing System
+
 on:
   workflow_dispatch:
     inputs:
@@ -8,9 +9,9 @@ on:
         default: 'manual'
         type: choice
         options:
-        - manual
-        - standard
-        - aggressive
+          - manual
+          - standard
+          - aggressive
       batch_size:
         description: 'Batch Size'
         required: false
@@ -22,27 +23,27 @@ on:
         default: 'global'
         type: choice
         options:
-        - global
-        - europe
-        - usa
-        - middle_east
+          - global
+          - europe
+          - usa
+          - middle_east
 
 jobs:
   manual_campaign:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-    
-    - name: Create minimal package.json
-      run: |
-        cat > package.json << 'EOF'
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      
+      - name: Create minimal package.json
+        run: |
+          cat > package.json << 'EOF'
 {
   "name": "kony_marketing",
   "version": "1.0.0",
@@ -53,22 +54,22 @@ jobs:
   "dependencies": {}
 }
 EOF
-    
-    - name: Install dotenv only
-      run: npm install dotenv
-    
-    - name: Create environment file
-      run: |
-        cat > .env << 'EOF'
+      
+      - name: Install dotenv only
+        run: npm install dotenv
+      
+      - name: Create environment file
+        run: |
+          cat > .env << 'EOF'
 CAMPAIGN_MODE=${{ github.event.inputs.campaign_mode }}
 BATCH_SIZE=${{ github.event.inputs.batch_size }}
 TARGET_REGION=${{ github.event.inputs.region }}
 RUN_TIMESTAMP=$(date +%s)
 EOF
-    
-    - name: Create main executable
-      run: |
-        cat > index.js << 'EOF'
+      
+      - name: Create main executable
+        run: |
+          cat > index.js << 'EOF'
 require('dotenv').config();
 
 console.log('========================================');
@@ -83,7 +84,6 @@ console.log('');
 console.log('🚀 Starting manual campaign...');
 console.log('');
 
-// Simulate campaign steps
 const steps = [
   'Initializing system...',
   'Checking configuration...',
@@ -113,7 +113,6 @@ async function simulateCampaign() {
   console.log('');
   console.log('💾 Results saved to: campaign_results.json');
   
-  // Save results
   const fs = require('fs');
   const results = {
     campaign_id: `KONY-${Date.now()}`,
@@ -137,7 +136,6 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Handle process signals
 process.on('SIGINT', () => {
   console.log('\n🛑 Manual execution interrupted');
   process.exit(0);
@@ -148,7 +146,6 @@ process.on('SIGTERM', () => {
   process.exit(0);
 });
 
-// Run campaign
 if (require.main === module) {
   simulateCampaign().catch(error => {
     console.error('❌ Campaign error:', error.message);
@@ -156,15 +153,15 @@ if (require.main === module) {
   });
 }
 EOF
-    
-    - name: Run manual campaign
-      run: node index.js
-    
-    - name: Upload results
-      uses: actions/upload-artifact@v4
-      with:
-        name: kony-campaign-results
-        path: |
-          campaign_results.json
-          .env
-        retention-days: 7
+      
+      - name: Run manual campaign
+        run: node index.js
+      
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: kony-campaign-results
+          path: |
+            campaign_results.json
+            .env
+          retention-days: 7
