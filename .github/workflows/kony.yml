@@ -1,0 +1,105 @@
+name: Kony Marketing System
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Campaign Mode'
+        required: true
+        default: 'standard'
+        type: choice
+        options:
+          - standard
+          - aggressive
+          - test
+      batch_size:
+        description: 'Batch Size'
+        required: false
+        default: '10'
+        type: number
+      region:
+        description: 'Target Region'
+        required: false
+        default: 'global'
+        type: choice
+        options:
+          - global
+          - europe
+          - usa
+          - middle_east
+      platforms:
+        description: 'Target Platforms'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - reddit
+          - twitter
+          - linkedin
+
+  schedule:
+    - cron: '0 */6 * * *'
+
+  push:
+    branches: [main]
+
+jobs:
+  kony-campaign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          if [ -f "package.json" ]; then
+            npm ci --no-audit --no-fund
+          else
+            echo "package.json not found"
+            exit 1
+          fi
+
+      - name: Setup environment
+        run: |
+          if [ -f "env.example" ]; then
+            cp env.example .env
+          fi
+          
+          echo "GOOGLE_SHEETS_ID=${{ secrets.GOOGLE_SHEETS_ID }}" >> .env
+          echo "GOOGLE_SERVICE_ACCOUNT_EMAIL=${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}" >> .env
+          echo "GOOGLE_PRIVATE_KEY=\"${{ secrets.GOOGLE_PRIVATE_KEY }}\"" >> .env
+          
+          echo "KONY_MODE=${{ github.event.inputs.mode }}" >> .env
+          echo "KONY_BATCH_SIZE=${{ github.event.inputs.batch_size }}" >> .env
+          echo "KONY_REGION=${{ github.event.inputs.region }}" >> .env
+          echo "KONY_PLATFORMS=${{ github.event.inputs.platforms }}" >> .env
+
+      - name: Run Kony System
+        run: |
+          if [ -f "src/index.js" ]; then
+            node src/index.js
+          elif [ -f "index.js" ]; then
+            node index.js
+          else
+            echo "Main entry point not found"
+            exit 1
+          fi
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kony-results
+          path: |
+            logs/
+            reports/
+            output/
+          retention-days: 7
