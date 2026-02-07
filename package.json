@@ -1,17 +1,15 @@
 {
   "name": "kony_marketing",
-  "version": "1.0.0",
-  "description": "نظام Kony للتسويق الذكي - البحث عن المشترين الحقيقيين ومراسلتهم",
+  "version": "2.0.0",
+  "description": "نظام Kony للتسويق الذكي - البحث عن المشترين الحقيقيين",
   "main": "src/index.js",
   "scripts": {
     "start": "node scripts/kony-master.js",
     "dev": "nodemon scripts/kony-master.js",
-    "setup": "node scripts/setup.js",
-    "test": "node tests/basic.test.js"
+    "setup": "node setup.js",
+    "test": "node quick-test.js",
+    "deploy": "node kony-processor.js"
   },
-  "keywords": ["marketing", "automation", "outreach", "sales", "ai"],
-  "author": "Kony Team",
-  "license": "MIT",
   "dependencies": {
     "googleapis": "^128.0.0",
     "axios": "^1.6.0",
@@ -20,11 +18,6 @@
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "dotenv": "^16.3.0",
-    "node-cron": "^3.0.3",
-    "nodemailer": "^6.9.7",
-    "winston": "^3.11.0"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.0"
+    "node-cron": "^3.0.3"
   }
 }
