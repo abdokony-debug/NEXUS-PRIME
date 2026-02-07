@@ -1,29 +1,33 @@
 {
-  "name": "kony-marketing",
-  "version": "1.0.0",
-  "description": "Professional Marketing Automation System",
-  "main": "src/index.js",
+  "name": "kony-marketing-integrated",
+  "version": "2.0.0",
+  "description": "Integrated Marketing Automation System",
+  "main": "index.js",
   "scripts": {
-    "start": "node src/index.js",
-    "test": "jest --passWithNoTests",
-    "lint": "eslint src/",
-    "setup": "node scripts/setup.js"
+    "start": "node index.js",
+    "start:integrated": "node index.js --integrated",
+    "start:simple": "node kony-processor.js",
+    "test:all": "node quick-test.js --all",
+    "test:components": "node quick-test.js --components",
+    "setup": "node setup.js",
+    "stealth:test": "node stealth-engine.js --test",
+    "proxy:test": "node proxy-rotator.js --test",
+    "browser:test": "node browser-simulator.js --test",
+    "report": "node report-generator.js"
   },
-  "keywords": ["marketing", "automation", "sales", "outreach"],
-  "author": "",
-  "license": "MIT",
   "dependencies": {
     "axios": "^1.6.0",
     "cheerio": "^1.0.0",
     "dotenv": "^16.3.0",
     "googleapis": "^128.0.0",
-    "puppeteer": "^21.0.0"
+    "puppeteer": "^21.0.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "user-agents": "^1.0.0",
+    "proxy-lists": "^1.0.0"
   },
   "devDependencies": {
-    "jest": "^29.7.0"
-  },
-  "engines": {
-    "node": ">=18.0.0",
-    "npm": ">=9.0.0"
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.0"
   }
 }
