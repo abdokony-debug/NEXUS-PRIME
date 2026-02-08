@@ -1,0 +1,30 @@
+name: NEXUS-PRIME Heartbeat
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Runs every 6 hours
+  workflow_dispatch:       # Allows manual button click
+
+jobs:
+  autonomous_operation:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 🛡️ Security Handshake
+        uses: actions/checkout@v4
+
+      - name: ⚡ Activate Python Env
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 📦 Inject Capabilities
+        run: pip install -r requirements.txt
+
+      - name: 🚀 Execute NEXUS Protocol
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python main.py
