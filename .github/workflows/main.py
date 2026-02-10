@@ -1,52 +1,87 @@
-name: NEXUS-PRIME Smart Automation
+import os
+import logging
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from supabase import create_client, Client
+import random
 
-on:
-  workflow_dispatch:   # تشغيل يدوي
-  schedule:
-    - cron: "0 */6 * * *"   # كل 6 ساعات (عدل حسب رغبتك)
+logging.basicConfig(
+    filename='nexus_prime.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
-jobs:
-  nexus-prime:
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    env:
-      AUTO_MODE: "true"
-      PYTHONUNBUFFERED: "1"
+SMTP_SERVER = os.getenv("SMTP_SERVER")
+SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
+SMTP_USERNAME = os.getenv("SMTP_USERNAME")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+def fetch_customers():
+    try:
+        response = supabase.table("customers").select("*").execute()
+        return response.data if response.data else []
+    except:
+        return []
 
-      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-      GOOGLE_CX: ${{ secrets.GOOGLE_CX }}
+def fetch_products():
+    try:
+        response = supabase.table("products").select("*").execute()
+        return response.data if response.data else []
+    except:
+        return []
 
-      SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
-      SMTP_PORT: ${{ secrets.SMTP_PORT }}
-      SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
-      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+def evaluate_customers(customers):
+    scored = []
+    for c in customers:
+        score = random.uniform(0, 1)
+        scored.append({"customer": c, "score": score})
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    return scored[:10]
 
-    steps:
-      - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+def generate_recommendations(products, top_n=3):
+    return random.sample(products, min(len(products), top_n))
 
-      - name: 🐍 Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+def send_email(to_email, subject, body):
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = SMTP_USERNAME
+        msg["To"] = to_email
+        msg["Subject"] = subject
+        msg.attach(MIMEText(body, "html"))
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+            server.send_message(msg)
+    except:
+        pass
 
-      - name: 📦 Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+def main():
+    logging.info("NEXUS-PRIME SMART started.")
+    customers = fetch_customers()
+    products = fetch_products()
+    if not customers or not products:
+        logging.warning("No customers or products found. Exiting.")
+        return
+    top_customers = evaluate_customers(customers)
+    for entry in top_customers:
+        c = entry["customer"]
+        score = entry["score"]
+        recommended = generate_recommendations(products)
+        body = f"""
+        <h2>مرحبًا {c.get('name', '')}!</h2>
+        <pلقد اخترنا لك منتجات مميزة بناءً على نشاطك معنا:</p>
+        <ul>
+            {''.join([f"<li>{p.get('name', 'منتج')}</li>" for p in recommended])}
+        </ul>
+        <p>نقاط التقييم الخاصة بك: {score:.2f}</p>
+        """
+        send_email(c.get("email"), f"عرض خاص لك، {c.get('name', '')}!", body)
+    logging.info("NEXUS-PRIME SMART finished successfully.")
 
-      - name: 🧠 Run NEXUS-PRIME SMART
-        run: |
-          python nexus_prime_smart.py
-
-      - name: 📊 Upload logs (optional)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: nexus-prime-logs
-          path: |
-            *.log
+if __name__ == "__main__":
+    main()
