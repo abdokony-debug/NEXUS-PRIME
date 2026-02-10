@@ -1,136 +1,108 @@
-import os, httpx, logging, time
-from datetime import datetime
-from supabase import create_client
-from email.mime.text import MIMEText
-import smtplib
-from telegram import Bot
-import discord
+import os
+import time
+import schedule
+import requests
+from openai import OpenAI
 from groq import Groq
+from supabase import create_client
+from discord_webhook import DiscordWebhook
+from googleapiclient.discovery import build
+from google.oauth2 import service_account
 
-# ================== CONFIG ==================
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
+# ===================== LOAD ENV =====================
+AUTO_MODE = os.getenv("AUTO_MODE", "true") == "true"
 
-GOOGLE_API_KEY = os.environ["GOOGLE_API_KEY"]
-GOOGLE_CX = os.environ["GOOGLE_CX"]
+# AI KEYS
+OPENAI_KEY = os.getenv("OPENAI_API_KEY")
+GROQ_KEY = os.getenv("GROQ_API_KEY")
 
-GROQ_API_KEY = os.environ["GROQ_API_KEY"]
+# SUPABASE
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 
-SMTP_SERVER = os.environ["SMTP_SERVER"]
-SMTP_PORT = int(os.environ["SMTP_PORT"])
-SMTP_USERNAME = os.environ["SMTP_USERNAME"]
-SMTP_PASSWORD = os.environ["SMTP_PASSWORD"]
+# GOOGLE
+GOOGLE_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+SHEET_ID = os.getenv("GOOGLE_SHEET_ID")
+SHEET_NAME = os.getenv("GOOGLE_SHEET_NAME")
 
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
+# DISCORD
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
-MAX_CONCURRENT_CAMPAIGNS = int(os.environ.get("MAX_CONCURRENT_CAMPAIGNS", 3))
-REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", 30))
-RATE_LIMIT = int(os.environ.get("RATE_LIMIT_PER_HOUR", 20))
+# ===================== INIT CLIENTS =====================
+openai_client = OpenAI(api_key=OPENAI_KEY)
+groq_client = Groq(api_key=GROQ_KEY)
 
-# ================== LOGGING ==================
-logging.basicConfig(level=logging.INFO, filename="nexus_prime.log", format="%(asctime)s - %(message)s")
-
-# ================== CLIENTS ==================
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-groq = Groq(api_key=GROQ_API_KEY)
 
-# ================== AI INTENT ANALYSIS ==================
-def analyze_intent(text):
+# Google Sheets
+credentials = service_account.Credentials.from_service_account_info(
+    eval(GOOGLE_JSON),
+    scopes=["https://www.googleapis.com/auth/spreadsheets"]
+)
+sheets_service = build("sheets", "v4", credentials=credentials)
+
+# ===================== AI CORE =====================
+def ai_generate(prompt):
     try:
-        r = groq.chat.completions.create(
-            model="llama3-70b-8192",
-            messages=[{"role":"user","content":f"Rate buyer intent 0-1:\n{text}"}],
-            temperature=0
+        # OpenAI Primary
+        response = openai_client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=800
         )
-        return float(r.choices[0].message.content.strip())
+        return response.choices[0].message.content
     except:
-        return 0.1
+        # Groq fallback (super fast)
+        response = groq_client.chat.completions.create(
+            model="llama-3.1-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.choices[0].message.content
 
-# ================== GOOGLE SEARCH ==================
-def google_search(query):
-    url = "https://www.googleapis.com/customsearch/v1"
-    params = {"key": GOOGLE_API_KEY, "cx": GOOGLE_CX, "q": query, "num": 10}
-    r = httpx.get(url, params=params, timeout=REQUEST_TIMEOUT)
-    data = r.json().get("items", [])
-    return [{"url": i["link"], "snippet": i.get("snippet","")} for i in data]
 
-# ================== EMAIL SEND ==================
-def send_email(to_email, subject, body):
-    try:
-        msg = MIMEText(body)
-        msg["Subject"] = subject
-        msg["From"] = SMTP_USERNAME
-        msg["To"] = to_email
+# ===================== DATABASE LOG =====================
+def log_to_supabase(data):
+    supabase.table("nexus_logs").insert({"content": data}).execute()
 
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as s:
-            s.starttls()
-            s.login(SMTP_USERNAME, SMTP_PASSWORD)
-            s.send_message(msg)
-        return True
-    except Exception as e:
-        logging.error(f"EMAIL FAIL {to_email} {e}")
-        return False
 
-# ================== TELEGRAM SEND ==================
-def send_telegram(chat_id, text):
-    try:
-        bot = Bot(TELEGRAM_BOT_TOKEN)
-        bot.send_message(chat_id, text)
-        return True
-    except Exception as e:
-        logging.error(f"TG FAIL {chat_id} {e}")
-        return False
+# ===================== GOOGLE SHEETS LOG =====================
+def log_to_sheet(text):
+    body = {"values": [[time.ctime(), text]]}
+    sheets_service.spreadsheets().values().append(
+        spreadsheetId=SHEET_ID,
+        range=f"{SHEET_NAME}!A1",
+        valueInputOption="RAW",
+        body=body
+    ).execute()
 
-# ================== DISCORD SEND ==================
-class DiscordBot(discord.Client):
-    async def send_dm(self, user_id, msg):
-        user = await self.fetch_user(user_id)
-        await user.send(msg)
 
-# ================== MESSAGE GENERATOR ==================
-def generate_message(product, lead_url):
-    return f"Hello, I found you interested in this topic.\nThis product may help:\n{product}\nSource: {lead_url}"
+# ===================== DISCORD ALERT =====================
+def discord_notify(msg):
+    webhook = DiscordWebhook(
+        url=f"https://discord.com/api/webhooks/{DISCORD_TOKEN}",
+        content=msg
+    )
+    webhook.execute()
 
-# ================== MAIN ENGINE ==================
-def main():
-    campaigns = supabase.table("campaigns").select("*").eq("status","active").execute().data
-    if not campaigns:
-        logging.info("NO ACTIVE CAMPAIGNS")
-        return
 
-    for camp in campaigns[:MAX_CONCURRENT_CAMPAIGNS]:
-        query = camp["keywords"]
-        product = camp["product_link"]
-        results = google_search(query)
+# ===================== MAIN AUTO ENGINE =====================
+def nexus_engine():
+    prompt = "Generate a high-profit automation strategy and trending digital product idea."
+    result = ai_generate(prompt)
 
-        for r in results:
-            url = r["url"]
-            snippet = r["snippet"]
+    print("AI OUTPUT:", result)
 
-            intent = analyze_intent(snippet)
-            if intent < 0.4:
-                continue  # ignore low buyers
+    log_to_supabase(result)
+    log_to_sheet(result)
+    discord_notify("NEXUS-PRIME AI EXECUTED:\n" + result)
 
-            msg = generate_message(product, url)
 
-            lead = {
-                "campaign_id": camp["id"],
-                "url": url,
-                "intent_score": intent,
-                "ai_analysis": snippet,
-                "message_draft": msg,
-                "status": "pending",
-                "created_at": datetime.utcnow().isoformat()
-            }
-            supabase.table("leads").insert(lead).execute()
+# ===================== SCHEDULER =====================
+schedule.every(6).hours.do(nexus_engine)
 
-            # Attempt email extraction (basic)
-            if "@" in snippet:
-                email = snippet.split("@")[0].split()[-1]+"@"+snippet.split("@")[1].split()[0]
-                send_email(email, "Product Recommendation", msg)
+print("🔥 NEXUS-PRIME ACTIVE — FULL AUTONOMOUS MODE")
 
-            time.sleep(3600 / RATE_LIMIT)
-
-if __name__ == "__main__":
-    main()
+if AUTO_MODE:
+    while True:
+        schedule.run_pending()
+        time.sleep(30)
