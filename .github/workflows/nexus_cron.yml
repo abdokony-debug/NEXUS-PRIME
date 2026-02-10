@@ -12,7 +12,6 @@ from urllib.parse import urlparse
 from supabase import create_client
 import re
 
-# Logging setup
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -23,13 +22,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Environment
 SUPABASE_URL = os.getenv('SUPABASE_URL', '')
 SUPABASE_KEY = os.getenv('SUPABASE_KEY', '')
 GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY', '')
 GOOGLE_CX = os.getenv('GOOGLE_CX', '')
 
-# Models
 class Platform:
     TWITTER = "twitter"
     LINKEDIN = "linkedin"
@@ -61,6 +58,22 @@ class Lead:
         self.status = LeadStatus.NEW
         self.message_sent = False
         self.created_at = datetime.now()
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'campaign_id': self.campaign_id,
+            'url': self.url,
+            'platform': self.platform,
+            'name': self.name,
+            'email': self.email,
+            'company': self.company,
+            'intent_score': self.intent_score,
+            'content_summary': self.content_summary[:500],
+            'status': self.status,
+            'message_sent': self.message_sent,
+            'created_at': self.created_at.isoformat()
+        }
 
 class Campaign:
     def __init__(self):
@@ -72,7 +85,7 @@ class Campaign:
         self.max_leads = 100
         self.min_intent_score = 70.0
         self.status = CampaignStatus.ACTIVE
-
+    
     @classmethod
     def from_db(cls, data: Dict):
         campaign = cls()
@@ -86,65 +99,80 @@ class Campaign:
         campaign.status = data.get('status', CampaignStatus.ACTIVE)
         return campaign
 
-# Database
 class DatabaseService:
     def __init__(self):
         self.client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        logger.info("Database connected")
     
     def get_active_campaigns(self) -> List[Campaign]:
         try:
             res = self.client.table('campaigns').select('*').eq('status', 'active').execute()
             return [Campaign.from_db(row) for row in res.data]
         except Exception as e:
-            logger.error(f"Database error: {e}")
+            logger.error(f"Get campaigns error: {e}")
             return []
+    
+    def get_campaign(self, campaign_id: str) -> Optional[Campaign]:
+        try:
+            res = self.client.table('campaigns').select('*').eq('id', campaign_id).execute()
+            if res.data:
+                return Campaign.from_db(res.data[0])
+            return None
+        except Exception as e:
+            logger.error(f"Get campaign error: {e}")
+            return None
     
     def insert_lead(self, lead: Lead) -> bool:
         try:
-            data = {
-                'id': lead.id,
-                'campaign_id': lead.campaign_id,
-                'url': lead.url,
-                'platform': lead.platform,
-                'name': lead.name,
-                'email': lead.email,
-                'company': lead.company,
-                'intent_score': lead.intent_score,
-                'content_summary': lead.content_summary[:500],
-                'status': lead.status,
-                'message_sent': lead.message_sent,
-                'created_at': lead.created_at.isoformat()
-            }
-            self.client.table('leads').insert(data).execute()
+            self.client.table('leads').insert(lead.to_dict()).execute()
             return True
         except Exception as e:
-            logger.error(f"Insert lead failed: {e}")
+            logger.error(f"Insert lead error: {e}")
             return False
+    
+    def get_campaign_stats(self, campaign_id: str) -> Dict:
+        try:
+            res = self.client.table('leads').select('*').eq('campaign_id', campaign_id).execute()
+            leads = res.data
+            total = len(leads)
+            contacted = sum(1 for lead in leads if lead.get('message_sent', False))
+            converted = sum(1 for lead in leads if lead.get('status') == LeadStatus.CONVERTED)
+            
+            return {
+                'total_leads': total,
+                'contacted_leads': contacted,
+                'converted_leads': converted,
+                'conversion_rate': (converted / total * 100) if total > 0 else 0
+            }
+        except Exception as e:
+            logger.error(f"Get stats error: {e}")
+            return {}
     
     def update_campaign_status(self, campaign_id: str, status: str):
         try:
             self.client.table('campaigns').update({'status': status}).eq('id', campaign_id).execute()
         except Exception as e:
-            logger.error(f"Update campaign failed: {e}")
+            logger.error(f"Update campaign error: {e}")
 
-# Intent Analyzer
 class IntentAnalyzer:
     def __init__(self):
         try:
             from transformers import pipeline
             self.classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
-        except:
+            logger.info("Intent analyzer initialized")
+        except Exception as e:
+            logger.warning(f"Transformers not available: {e}")
             self.classifier = None
     
-    def score(self, text: str) -> float:
+    def analyze(self, text: str) -> float:
         if not text or len(text) < 10:
             return 0.0
         
         if self.classifier:
-            return self._score_with_transformers(text)
-        return self._score_fallback(text)
+            return self._analyze_transformers(text)
+        return self._analyze_fallback(text)
     
-    def _score_with_transformers(self, text: str) -> float:
+    def _analyze_transformers(self, text: str) -> float:
         try:
             labels = ["buying intent", "researching", "complaining", "casual"]
             result = self.classifier(text[:500], labels)
@@ -156,10 +184,11 @@ class IntentAnalyzer:
                 return top_score * 0.7
             else:
                 return top_score * 0.3
-        except:
-            return self._score_fallback(text)
+        except Exception as e:
+            logger.error(f"Transformers analysis error: {e}")
+            return self._analyze_fallback(text)
     
-    def _score_fallback(self, text: str) -> float:
+    def _analyze_fallback(self, text: str) -> float:
         keywords = {
             'buy': 90, 'purchase': 85, 'need': 80, 'looking for': 75,
             'problem': 70, 'solution': 65, 'review': 60, 'compare': 55
@@ -177,13 +206,13 @@ class IntentAnalyzer:
         
         return float(max_score)
 
-# Lead Finder
 class LeadFinder:
     def __init__(self):
         self.session = None
     
     async def search(self, query: str, num_results: int = 10) -> List[str]:
         if not GOOGLE_API_KEY or not GOOGLE_CX:
+            logger.warning("Google API keys not found, using fallback")
             return self._fallback_search(query, num_results)
         
         try:
@@ -196,18 +225,18 @@ class LeadFinder:
                     'num': min(num_results, 10)
                 }
                 
-                async with session.get(url, params=params) as response:
+                async with session.get(url, params=params, timeout=30) as response:
                     data = await response.json()
-                    return [item['link'] for item in data.get('items', [])]
+                    items = data.get('items', [])
+                    return [item['link'] for item in items if 'link' in item]
         except Exception as e:
-            logger.error(f"Search error: {e}")
+            logger.error(f"Google search error: {e}")
             return self._fallback_search(query, num_results)
     
     def _fallback_search(self, query: str, num_results: int) -> List[str]:
         platforms = ['twitter.com', 'linkedin.com', 'github.com']
         return [f"https://{platform}/search?q={query.replace(' ', '+')}" for platform in platforms[:num_results]]
 
-# Content Scraper
 class ContentScraper:
     def __init__(self):
         self.session = None
@@ -224,28 +253,22 @@ class ContentScraper:
             return {'content': '', 'platform': Platform.GENERIC}
     
     def _extract_data(self, html: str, url: str) -> Dict:
-        import re
-        
         data = {'content': '', 'platform': Platform.GENERIC}
         
-        # Extract platform
         url_lower = url.lower()
         for platform in [Platform.TWITTER, Platform.LINKEDIN, Platform.GITHUB]:
             if platform in url_lower:
                 data['platform'] = platform
                 break
         
-        # Extract content (simple regex)
         text = re.sub(r'<[^>]+>', ' ', html)
         text = re.sub(r'\s+', ' ', text)
         data['content'] = text[:2000]
         
-        # Extract email
         emails = re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', html)
         if emails:
             data['email'] = emails[0]
         
-        # Extract name from URL
         parsed = urlparse(url)
         path_parts = parsed.path.strip('/').split('/')
         if path_parts:
@@ -253,31 +276,21 @@ class ContentScraper:
         
         return data
 
-# Messenger
 class Messenger:
+    def __init__(self):
+        self.sent_count = 0
+    
     async def send(self, lead: Lead, campaign: Campaign) -> bool:
-        logger.info(f"Would send message to {lead.url}")
+        logger.info(f"[MESSENGER] Would send to: {lead.url}")
+        logger.info(f"[MESSENGER] Platform: {lead.platform}")
+        logger.info(f"[MESSENGER] Score: {lead.intent_score}")
+        logger.info(f"[MESSENGER] Message preview generated")
+        
         lead.message_sent = True
         lead.status = LeadStatus.CONTACTED
+        self.sent_count += 1
         return True
 
-# Rate Limiter
-class RateLimiter:
-    def __init__(self):
-        self.sent_messages = {}
-    
-    def can_send(self, campaign_id: str) -> bool:
-        today = datetime.now().date().isoformat()
-        key = f"{campaign_id}_{today}"
-        
-        count = self.sent_messages.get(key, 0)
-        if count >= 50:  # Max 50 per day per campaign
-            return False
-        
-        self.sent_messages[key] = count + 1
-        return True
-
-# Main System
 class NexusPrime:
     def __init__(self):
         self.db = DatabaseService()
@@ -285,49 +298,42 @@ class NexusPrime:
         self.finder = LeadFinder()
         self.scraper = ContentScraper()
         self.messenger = Messenger()
-        self.limiter = RateLimiter()
-        self.running = False
+        self.processed_count = 0
     
-    async def run(self):
-        self.running = True
-        logger.info("NEXUS-PRIME starting...")
+    async def process_campaign(self, campaign_id: str) -> Dict:
+        logger.info(f"Processing campaign: {campaign_id}")
         
-        while self.running:
-            try:
-                await self._process_campaigns()
-                await asyncio.sleep(300)  # 5 minutes
-            except Exception as e:
-                logger.error(f"Main loop error: {e}")
-                await asyncio.sleep(60)
-    
-    async def _process_campaigns(self):
-        campaigns = self.db.get_active_campaigns()
+        campaign = self.db.get_campaign(campaign_id)
+        if not campaign:
+            return {"error": "Campaign not found"}
         
-        for campaign in campaigns:
-            if not self.running:
-                break
-            
-            logger.info(f"Processing campaign: {campaign.name}")
-            await self._process_campaign(campaign)
-            await asyncio.sleep(2)
-    
-    async def _process_campaign(self, campaign: Campaign):
+        if campaign.status != CampaignStatus.ACTIVE:
+            return {"error": "Campaign is not active"}
+        
+        logger.info(f"Campaign: {campaign.name}")
+        logger.info(f"Keywords: {', '.join(campaign.keywords)}")
+        
         query = " ".join(campaign.keywords)
         urls = await self.finder.search(query, campaign.max_leads)
         
+        logger.info(f"Found {len(urls)} potential leads")
+        
+        results = {
+            "campaign_id": campaign_id,
+            "campaign_name": campaign.name,
+            "total_found": len(urls),
+            "processed": 0,
+            "qualified": 0,
+            "sent": 0,
+            "leads": []
+        }
+        
         for url in urls[:campaign.max_leads]:
-            if not self.running:
-                break
-            
             try:
-                # Scrape content
                 scraped = await self.scraper.scrape(url)
-                
-                # Analyze intent
-                intent_score = self.analyzer.score(scraped['content'])
+                intent_score = self.analyzer.analyze(scraped['content'])
                 
                 if intent_score >= campaign.min_intent_score:
-                    # Create lead
                     lead = Lead()
                     lead.campaign_id = campaign.id
                     lead.url = url
@@ -337,14 +343,19 @@ class NexusPrime:
                     lead.intent_score = intent_score
                     lead.content_summary = scraped['content'][:500]
                     
-                    # Save lead
                     if self.db.insert_lead(lead):
-                        logger.info(f"Lead saved: {url} (Score: {intent_score})")
+                        results["qualified"] += 1
+                        results["leads"].append({
+                            "url": url,
+                            "score": intent_score,
+                            "platform": scraped['platform']
+                        })
                         
-                        # Send message if rate limit allows
-                        if self.limiter.can_send(campaign.id):
-                            await self.messenger.send(lead, campaign)
-                            self.db.insert_lead(lead)
+                        await self.messenger.send(lead, campaign)
+                        results["sent"] += 1
+                
+                results["processed"] += 1
+                self.processed_count += 1
                 
                 await asyncio.sleep(1)
                 
@@ -352,33 +363,108 @@ class NexusPrime:
                 logger.error(f"Error processing {url}: {e}")
                 await asyncio.sleep(2)
         
-        # Check if campaign reached max leads
-        stats = self.db.get_campaign_stats(campaign.id)
-        if stats['total_leads'] >= campaign.max_leads:
-            self.db.update_campaign_status(campaign.id, CampaignStatus.COMPLETED)
+        stats = self.db.get_campaign_stats(campaign_id)
+        if stats.get('total_leads', 0) >= campaign.max_leads:
+            self.db.update_campaign_status(campaign_id, CampaignStatus.COMPLETED)
             logger.info(f"Campaign {campaign.name} completed")
-
-    def stop(self):
-        self.running = False
-        logger.info("NEXUS-PRIME stopping...")
-
-# Startup
-if __name__ == "__main__":
-    # Check environment
-    required = ['SUPABASE_URL', 'SUPABASE_KEY']
-    missing = [var for var in required if not os.getenv(var)]
+        
+        results["final_stats"] = stats
+        return results
     
-    if missing:
-        logger.error(f"Missing environment variables: {missing}")
-        sys.exit(1)
+    async def process_all_active(self) -> List[Dict]:
+        campaigns = self.db.get_active_campaigns()
+        results = []
+        
+        logger.info(f"Found {len(campaigns)} active campaigns")
+        
+        for campaign in campaigns:
+            result = await self.process_campaign(campaign.id)
+            results.append(result)
+            await asyncio.sleep(5)
+        
+        return results
     
-    # Run system
+    def get_stats(self) -> Dict:
+        return {
+            "processed_total": self.processed_count,
+            "messages_sent": self.messenger.sent_count
+        }
+
+def main_menu():
+    print("\n" + "="*50)
+    print("NEXUS-PRIME - Outreach System")
+    print("="*50)
+    print("1. Process all active campaigns")
+    print("2. Process specific campaign")
+    print("3. Show system stats")
+    print("4. Exit")
+    print("="*50)
+    
+    choice = input("\nSelect option (1-4): ").strip()
+    return choice
+
+async def run_system():
     system = NexusPrime()
     
-    try:
-        asyncio.run(system.run())
-    except KeyboardInterrupt:
-        system.stop()
-    except Exception as e:
-        logger.error(f"System error: {e}")
+    while True:
+        choice = main_menu()
+        
+        if choice == "1":
+            print("\nProcessing all active campaigns...")
+            results = await system.process_all_active()
+            
+            for result in results:
+                print(f"\nCampaign: {result.get('campaign_name')}")
+                print(f"Processed: {result.get('processed')}")
+                print(f"Qualified: {result.get('qualified')}")
+                print(f"Messages sent: {result.get('sent')}")
+        
+        elif choice == "2":
+            campaign_id = input("\nEnter campaign ID: ").strip()
+            if campaign_id:
+                print(f"\nProcessing campaign {campaign_id}...")
+                result = await system.process_campaign(campaign_id)
+                
+                if "error" in result:
+                    print(f"Error: {result['error']}")
+                else:
+                    print(f"\nCampaign: {result.get('campaign_name')}")
+                    print(f"Total found: {result.get('total_found')}")
+                    print(f"Processed: {result.get('processed')}")
+                    print(f"Qualified: {result.get('qualified')}")
+                    print(f"Messages sent: {result.get('sent')}")
+                    
+                    if result.get('final_stats'):
+                        stats = result['final_stats']
+                        print(f"\nFinal Stats:")
+                        print(f"  Total leads: {stats.get('total_leads', 0)}")
+                        print(f"  Contacted: {stats.get('contacted_leads', 0)}")
+                        print(f"  Converted: {stats.get('converted_leads', 0)}")
+                        print(f"  Conversion rate: {stats.get('conversion_rate', 0):.1f}%")
+            else:
+                print("Campaign ID required")
+        
+        elif choice == "3":
+            stats = system.get_stats()
+            print("\nSystem Statistics:")
+            print(f"Total processed: {stats['processed_total']}")
+            print(f"Messages sent: {stats['messages_sent']}")
+        
+        elif choice == "4":
+            print("\nExiting NEXUS-PRIME...")
+            break
+        
+        else:
+            print("\nInvalid option")
+
+if __name__ == "__main__":
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        print("ERROR: SUPABASE_URL and SUPABASE_KEY environment variables are required")
+        print("Set them in your environment or create a .env file")
         sys.exit(1)
+    
+    print("NEXUS-PRIME System Starting...")
+    print(f"Supabase URL: {SUPABASE_URL[:30]}...")
+    print(f"Google API Key: {'Set' if GOOGLE_API_KEY else 'Not set'}")
+    
+    asyncio.run(run_system())
