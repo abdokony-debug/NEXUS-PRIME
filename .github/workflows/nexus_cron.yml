@@ -1,29 +1,356 @@
-name: NEXUS-PRIME Heartbeat
+#!/usr/bin/env python3
+"""
+Smart Outreach System - نظام التسويق الذكي المتكامل
+نظام متكامل للبحث عن العملاء المحتملين، تحليل النوايا، والإرسال الذكي عبر منصات متعددة
+"""
 
-on:
-  schedule:
-    - cron: '0 */6 * * *'  # Runs every 6 hours
-  workflow_dispatch:       # Allows manual button click
+import asyncio
+import logging
+import signal
+import sys
+from datetime import datetime
+from typing import List, Dict
+import schedule
+import time
 
-jobs:
-  autonomous_operation:
-    runs-on: ubuntu-latest
+from config.settings import settings
+from core.database import DatabaseService
+from core.models import Campaign, Lead, LeadStatus, CampaignStatus
+from core.analyzer import IntentAnalyzer
+from core.rate_limiter import RateLimiter
+from services.scraper import ContentScraper
+from services.finder import LeadFinder
+from services.messenger import MessageSender
+from services.reporter import ReportGenerator
+
+# إعداد التسجيل
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(f"logs/outreach_{datetime.now().strftime('%Y%m%d')}.log"),
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger(__name__)
+
+class SmartOutreachSystem:
+    """النظام الرئيسي للتسويق الذكي"""
     
-    steps:
-      - name: Security Handshake
-        uses: actions/checkout@v4
-      - name: Activate Python Env
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-      - name: Upgrade pip
-        run: python -m pip install --upgrade pip
-      - name: Inject Capabilities
-        run: pip install -r requirements.txt
-      - name: Execute NEXUS Protocol
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: python main.py
+    def __init__(self):
+        # التحقق من الإعدادات
+        try:
+            settings.validate()
+            logger.info("Settings validated successfully")
+        except ValueError as e:
+            logger.error(f"Settings validation failed: {e}")
+            sys.exit(1)
+        
+        # تهيئة الخدمات
+        self.db = DatabaseService()
+        self.analyzer = IntentAnalyzer()
+        self.rate_limiter = RateLimiter()
+        self.finder = LeadFinder()
+        self.scraper = ContentScraper()
+        self.messenger = MessageSender()
+        self.reporter = ReportGenerator(self.db)
+        
+        # حالة النظام
+        self.is_running = False
+        self.current_campaigns: List[Campaign] = []
+        
+        # إعداد معالجات الإشارات
+        signal.signal(signal.SIGINT, self.signal_handler)
+        signal.signal(signal.SIGTERM, self.signal_handler)
+    
+    def signal_handler(self, signum, frame):
+        """معالجة إشارات الإغلاق"""
+        logger.info(f"Received signal {signum}. Shutting down gracefully...")
+        self.is_running = False
+    
+    async def start(self):
+        """بدء تشغيل النظام"""
+        logger.info("🚀 Starting Smart Outreach System...")
+        self.is_running = True
+        
+        try:
+            # بدء المهام المجدولة
+            self._setup_scheduled_tasks()
+            
+            # الحلقة الرئيسية
+            while self.is_running:
+                await self._process_cycle()
+                await asyncio.sleep(60)  # انتظار دقيقة بين الدورات
+        
+        except Exception as e:
+            logger.error(f"System error: {e}", exc_info=True)
+        finally:
+            await self.shutdown()
+    
+    def _setup_scheduled_tasks(self):
+        """إعداد المهام المجدولة"""
+        # تقرير يومي في الساعة 8 صباحًا
+        schedule.every().day.at("08:00").do(self._generate_daily_report)
+        
+        # فحص الحملات كل 30 دقيقة
+        schedule.every(30).minutes.do(self._check_campaigns)
+        
+        # تنظيف السجلات القديمة يوميًا
+        schedule.every().day.at("00:00").do(self._cleanup_old_data)
+        
+        logger.info("Scheduled tasks configured")
+    
+    async def _process_cycle(self):
+        """دورة المعالجة الرئيسية"""
+        try:
+            # تشغيل المهام المجدولة
+            schedule.run_pending()
+            
+            # معالجة الحملات النشطة
+            await self._process_active_campaigns()
+            
+            # معالجة العملاء الذين يحتاجون متابعة
+            await self._process_followups()
+            
+        except Exception as e:
+            logger.error(f"Process cycle error: {e}")
+    
+    async def _process_active_campaigns(self):
+        """معالجة الحملات النشطة"""
+        try:
+            campaigns = self.db.get_active_campaigns()
+            
+            for campaign in campaigns:
+                if not self.is_running:
+                    break
+                
+                # التحقق من الحد الأقصى للعملاء
+                campaign_stats = self.db.get_campaign_stats(campaign.id)
+                if campaign_stats.get('total_leads', 0) >= campaign.max_leads:
+                    logger.info(f"Campaign {campaign.name} reached max leads limit")
+                    self.db.update_campaign_status(campaign.id, CampaignStatus.COMPLETED)
+                    continue
+                
+                logger.info(f"Processing campaign: {campaign.name}")
+                await self._process_single_campaign(campaign)
+                
+                # انتظار بين الحملات
+                await asyncio.sleep(5)
+        
+        except Exception as e:
+            logger.error(f"Error processing campaigns: {e}")
+    
+    async def _process_single_campaign(self, campaign: Campaign):
+        """معالجة حملة فردية"""
+        try:
+            async with self.finder as finder:
+                # البحث عن عملاء محتملين
+                logger.info(f"Searching for leads for campaign: {campaign.name}")
+                search_results = await finder.search_leads(
+                    keywords=campaign.keywords,
+                    platforms=campaign.target_platforms,
+                    max_results=min(20, campaign.max_leads),
+                    region=campaign.target_regions[0] if campaign.target_regions else ""
+                )
+                
+                logger.info(f"Found {len(search_results)} potential leads")
+                
+                # معالجة كل نتيجة
+                async with self.scraper as scraper:
+                    for result in search_results:
+                        if not self.is_running:
+                            break
+                        
+                        try:
+                            await self._process_potential_lead(result, campaign, scraper)
+                            await asyncio.sleep(2)  # تأخير بين الطلبات
+                        
+                        except Exception as e:
+                            logger.error(f"Error processing lead {result.get('url')}: {e}")
+        
+        except Exception as e:
+            logger.error(f"Error in campaign processing: {e}")
+    
+    async def _process_potential_lead(self, result: Dict, campaign: Campaign, scraper: ContentScraper):
+        """معالجة عميل محتمل"""
+        url = result.get('url')
+        if not url:
+            return
+        
+        # استخراج المحتوى
+        scrape_data = await scraper.scrape_url(url)
+        
+        if not scrape_data.get('content'):
+            logger.warning(f"No content extracted from {url}")
+            return
+        
+        # تحليل النية
+        analysis = self.analyzer.analyze_content(scrape_data['content'], url)
+        
+        # التحقق من الحد الأدنى للنقاط
+        if analysis['overall_score'] < campaign.min_intent_score:
+            logger.info(f"Lead score {analysis['overall_score']} below threshold for {url}")
+            return
+        
+        # إنشاء كائن العميل
+        lead = Lead(
+            campaign_id=campaign.id,
+            url=url,
+            platform=scrape_data['platform'],
+            name=scrape_data.get('author', ''),
+            email=scrape_data.get('contact_info', {}).get('email', ''),
+            company=scrape_data.get('company', ''),
+            job_title=scrape_data.get('job_title', ''),
+            location=scrape_data.get('location', ''),
+            intent_score=analysis['overall_score'],
+            sentiment_score=analysis['sentiment'].get('score', 0),
+            relevance_score=analysis['overall_score'] * 0.8,  # تقديري
+            content_summary=scrape_data['content'][:500] if scrape_data['content'] else '',
+            engagement_metrics=scrape_data.get('engagement_metrics', {}),
+            contact_info=scrape_data.get('contact_info', {}),
+            status=LeadStatus.NEW
+        )
+        
+        # حفظ العميل في قاعدة البيانات
+        if self.db.insert_lead(lead):
+            logger.info(f"✅ Lead saved: {url} (Score: {lead.intent_score})")
+            
+            # محاولة الإرسال الفوري إذا كانت النقطة عالية
+            if lead.intent_score >= 85:
+                await self._attempt_immediate_outreach(lead, campaign)
+        else:
+            logger.warning(f"Failed to save lead: {url}")
+    
+    async def _attempt_immediate_outreach(self, lead: Lead, campaign: Campaign):
+        """محاولة الاتصال الفوري للعملاء ذوي النقاط العالية"""
+        try:
+            # اختيار أفضل منصة للاتصال
+            platform = self._select_best_platform(lead)
+            
+            if not platform:
+                return
+            
+            # التحقق من حدود الإرسال
+            if not self.rate_limiter.can_send(platform.value, lead.campaign_id):
+                logger.info(f"Rate limit reached for {platform.value}")
+                return
+            
+            # إعداد بيانات الحملة للإرسال
+            campaign_data = {
+                'product_name': campaign.name,
+                'usp': campaign.usp,
+                'product_link': campaign.product_link,
+                'signature': 'Best regards,\nSmart Outreach Team'
+            }
+            
+            # إرسال الرسالة
+            success, response = await self.messenger.send_message(lead, campaign_data, platform)
+            
+            if success:
+                lead.status = LeadStatus.CONTACTED
+                lead.message_sent = True
+                lead.last_contacted = datetime.now()
+                
+                self.db.update_lead(lead)
+                self.rate_limiter.record_send(platform.value, lead.campaign_id)
+                
+                logger.info(f"✅ Immediate outreach successful via {platform.value}")
+            else:
+                logger.warning(f"Immediate outreach failed: {response}")
+        
+        except Exception as e:
+            logger.error(f"Error in immediate outreach: {e}")
+    
+    def _select_best_platform(self, lead: Lead):
+        """اختيار أفضل منصة للاتصال"""
+        # الأولوية: البريد الإلكتروني إذا متوفر، ثم المنصة الأصلية
+        if lead.email:
+            from core.models import Platform
+            return Platform.EMAIL
+        else:
+            return lead.platform
+    
+    async def _process_followups(self):
+        """معالجة المتابعات"""
+        try:
+            # جلب العملاء الذين تم الاتصال بهم ولم يردوا
+            # (تطبيق متقدم يتطلب تتبع الردود)
+            pass
+        
+        except Exception as e:
+            logger.error(f"Error processing followups: {e}")
+    
+    def _generate_daily_report(self):
+        """توليد تقرير يومي"""
+        try:
+            report = self.reporter.generate_dashboard_report()
+            
+            # حفظ التقرير
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            report_file = f"reports/dashboard_{timestamp}.json"
+            
+            import json
+            with open(report_file, 'w', encoding='utf-8') as f:
+                json.dump(report, f, indent=2, ensure_ascii=False)
+            
+            logger.info(f"Daily report generated: {report_file}")
+            
+            # إرسال التقرير بالبريد الإلكتروني (اختياري)
+            # self._send_report_email(report)
+        
+        except Exception as e:
+            logger.error(f"Error generating daily report: {e}")
+    
+    def _check_campaigns(self):
+        """فحص حالة الحملات"""
+        try:
+            campaigns = self.db.get_active_campaigns()
+            
+            for campaign in campaigns:
+                stats = self.db.get_campaign_stats(campaign.id)
+                
+                # التحقق من الحملات التي لم تحصل على عملاء
+                if stats.get('total_leads', 0) == 0:
+                    logger.warning(f"Campaign {campaign.name} has no leads after 24 hours")
+                    # يمكن إضافة إجراءات تلقائية هنا
+        
+        except Exception as e:
+            logger.error(f"Error checking campaigns: {e}")
+    
+    def _cleanup_old_data(self):
+        """تنظيف البيانات القديمة"""
+        # تنظيف السجلات القديمة (تطبيق متقدم)
+        pass
+    
+    async def shutdown(self):
+        """إغلاق النظام بشكل مرتب"""
+        logger.info("Shutting down Smart Outreach System...")
+        
+        # تحديث حالة الحملات
+        for campaign in self.current_campaigns:
+            self.db.update_campaign_status(campaign.id, CampaignStatus.PAUSED)
+        
+        logger.info("Shutdown complete")
+
+async def main():
+    """الدالة الرئيسية"""
+    system = SmartOutreachSystem()
+    
+    try:
+        await system.start()
+    except KeyboardInterrupt:
+        logger.info("System stopped by user")
+    except Exception as e:
+        logger.error(f"Fatal error: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    # إنشاء المجلدات المطلوبة
+    import os
+    os.makedirs("logs", exist_ok=True)
+    os.makedirs("reports", exist_ok=True)
+    os.makedirs("data", exist_ok=True)
+    
+    # بدء النظام
+    asyncio.run(main())
