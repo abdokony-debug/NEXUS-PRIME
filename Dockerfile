@@ -1,20 +1,8 @@
 FROM python:3.12-slim
-
 WORKDIR /app
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-ENV AUTO_MODE=true
-ENV OPENAI_API_KEY=your_openai_key
-ENV GROQ_API_KEY=your_groq_key
-ENV SUPABASE_URL=your_supabase_url
-ENV SUPABASE_SERVICE_KEY=your_supabase_key
-ENV DISCORD_TOKEN=your_discord_webhook
-ENV GOOGLE_SERVICE_ACCOUNT_JSON='{"type": "service_account", ...}'
-ENV GOOGLE_SHEET_ID=your_sheet_id
-ENV GOOGLE_SHEET_NAME=Sheet1
-
-CMD ["python", "main.py"]
+COPY . /app
+RUN pip install --upgrade pip && pip install -r requirements.txt
+RUN pip install supervisor
+COPY supervisord.conf /etc/supervisord.conf
+EXPOSE 8000
+CMD ["supervisord", "-c", "/etc/supervisord.conf"]
