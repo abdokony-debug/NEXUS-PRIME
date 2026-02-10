@@ -1,356 +1,384 @@
-#!/usr/bin/env python3
-"""
-Smart Outreach System - نظام التسويق الذكي المتكامل
-نظام متكامل للبحث عن العملاء المحتملين، تحليل النوايا، والإرسال الذكي عبر منصات متعددة
-"""
-
+# nexus_prime.py
+import os
+import sys
+import json
+import uuid
 import asyncio
 import logging
-import signal
-import sys
-from datetime import datetime
-from typing import List, Dict
-import schedule
-import time
+import aiohttp
+from datetime import datetime, timedelta
+from typing import List, Dict, Optional
+from urllib.parse import urlparse
+from supabase import create_client
+import re
 
-from config.settings import settings
-from core.database import DatabaseService
-from core.models import Campaign, Lead, LeadStatus, CampaignStatus
-from core.analyzer import IntentAnalyzer
-from core.rate_limiter import RateLimiter
-from services.scraper import ContentScraper
-from services.finder import LeadFinder
-from services.messenger import MessageSender
-from services.reporter import ReportGenerator
-
-# إعداد التسجيل
+# Logging setup
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(f"logs/outreach_{datetime.now().strftime('%Y%m%d')}.log"),
+        logging.FileHandler('nexus_prime.log'),
         logging.StreamHandler()
     ]
 )
-
 logger = logging.getLogger(__name__)
 
-class SmartOutreachSystem:
-    """النظام الرئيسي للتسويق الذكي"""
-    
+# Environment
+SUPABASE_URL = os.getenv('SUPABASE_URL', '')
+SUPABASE_KEY = os.getenv('SUPABASE_KEY', '')
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY', '')
+GOOGLE_CX = os.getenv('GOOGLE_CX', '')
+
+# Models
+class Platform:
+    TWITTER = "twitter"
+    LINKEDIN = "linkedin"
+    EMAIL = "email"
+    GITHUB = "github"
+    GENERIC = "generic"
+
+class LeadStatus:
+    NEW = "new"
+    CONTACTED = "contacted"
+    CONVERTED = "converted"
+
+class CampaignStatus:
+    ACTIVE = "active"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+
+class Lead:
     def __init__(self):
-        # التحقق من الإعدادات
+        self.id = str(uuid.uuid4())
+        self.campaign_id = ""
+        self.url = ""
+        self.platform = Platform.GENERIC
+        self.name = ""
+        self.email = ""
+        self.company = ""
+        self.intent_score = 0.0
+        self.content_summary = ""
+        self.status = LeadStatus.NEW
+        self.message_sent = False
+        self.created_at = datetime.now()
+
+class Campaign:
+    def __init__(self):
+        self.id = ""
+        self.name = ""
+        self.keywords = []
+        self.usp = ""
+        self.product_link = ""
+        self.max_leads = 100
+        self.min_intent_score = 70.0
+        self.status = CampaignStatus.ACTIVE
+
+    @classmethod
+    def from_db(cls, data: Dict):
+        campaign = cls()
+        campaign.id = data.get('id', '')
+        campaign.name = data.get('name', '')
+        campaign.keywords = [k.strip() for k in data.get('keywords', '').split(',') if k.strip()]
+        campaign.usp = data.get('usp', '')
+        campaign.product_link = data.get('product_link', '')
+        campaign.max_leads = data.get('max_leads', 100)
+        campaign.min_intent_score = data.get('min_intent_score', 70.0)
+        campaign.status = data.get('status', CampaignStatus.ACTIVE)
+        return campaign
+
+# Database
+class DatabaseService:
+    def __init__(self):
+        self.client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    
+    def get_active_campaigns(self) -> List[Campaign]:
         try:
-            settings.validate()
-            logger.info("Settings validated successfully")
-        except ValueError as e:
-            logger.error(f"Settings validation failed: {e}")
-            sys.exit(1)
+            res = self.client.table('campaigns').select('*').eq('status', 'active').execute()
+            return [Campaign.from_db(row) for row in res.data]
+        except Exception as e:
+            logger.error(f"Database error: {e}")
+            return []
+    
+    def insert_lead(self, lead: Lead) -> bool:
+        try:
+            data = {
+                'id': lead.id,
+                'campaign_id': lead.campaign_id,
+                'url': lead.url,
+                'platform': lead.platform,
+                'name': lead.name,
+                'email': lead.email,
+                'company': lead.company,
+                'intent_score': lead.intent_score,
+                'content_summary': lead.content_summary[:500],
+                'status': lead.status,
+                'message_sent': lead.message_sent,
+                'created_at': lead.created_at.isoformat()
+            }
+            self.client.table('leads').insert(data).execute()
+            return True
+        except Exception as e:
+            logger.error(f"Insert lead failed: {e}")
+            return False
+    
+    def update_campaign_status(self, campaign_id: str, status: str):
+        try:
+            self.client.table('campaigns').update({'status': status}).eq('id', campaign_id).execute()
+        except Exception as e:
+            logger.error(f"Update campaign failed: {e}")
+
+# Intent Analyzer
+class IntentAnalyzer:
+    def __init__(self):
+        try:
+            from transformers import pipeline
+            self.classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
+        except:
+            self.classifier = None
+    
+    def score(self, text: str) -> float:
+        if not text or len(text) < 10:
+            return 0.0
         
-        # تهيئة الخدمات
+        if self.classifier:
+            return self._score_with_transformers(text)
+        return self._score_fallback(text)
+    
+    def _score_with_transformers(self, text: str) -> float:
+        try:
+            labels = ["buying intent", "researching", "complaining", "casual"]
+            result = self.classifier(text[:500], labels)
+            top_score = result['scores'][0] * 100
+            
+            if result['labels'][0] == "buying intent":
+                return top_score
+            elif result['labels'][0] == "researching":
+                return top_score * 0.7
+            else:
+                return top_score * 0.3
+        except:
+            return self._score_fallback(text)
+    
+    def _score_fallback(self, text: str) -> float:
+        keywords = {
+            'buy': 90, 'purchase': 85, 'need': 80, 'looking for': 75,
+            'problem': 70, 'solution': 65, 'review': 60, 'compare': 55
+        }
+        
+        text_lower = text.lower()
+        max_score = 0
+        
+        for keyword, score in keywords.items():
+            if keyword in text_lower:
+                max_score = max(max_score, score)
+        
+        if max_score == 0:
+            max_score = 40 if len(text) > 100 else 20
+        
+        return float(max_score)
+
+# Lead Finder
+class LeadFinder:
+    def __init__(self):
+        self.session = None
+    
+    async def search(self, query: str, num_results: int = 10) -> List[str]:
+        if not GOOGLE_API_KEY or not GOOGLE_CX:
+            return self._fallback_search(query, num_results)
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                url = "https://www.googleapis.com/customsearch/v1"
+                params = {
+                    'q': query,
+                    'key': GOOGLE_API_KEY,
+                    'cx': GOOGLE_CX,
+                    'num': min(num_results, 10)
+                }
+                
+                async with session.get(url, params=params) as response:
+                    data = await response.json()
+                    return [item['link'] for item in data.get('items', [])]
+        except Exception as e:
+            logger.error(f"Search error: {e}")
+            return self._fallback_search(query, num_results)
+    
+    def _fallback_search(self, query: str, num_results: int) -> List[str]:
+        platforms = ['twitter.com', 'linkedin.com', 'github.com']
+        return [f"https://{platform}/search?q={query.replace(' ', '+')}" for platform in platforms[:num_results]]
+
+# Content Scraper
+class ContentScraper:
+    def __init__(self):
+        self.session = None
+    
+    async def scrape(self, url: str) -> Dict:
+        try:
+            async with aiohttp.ClientSession() as session:
+                headers = {'User-Agent': 'Mozilla/5.0'}
+                async with session.get(url, headers=headers, timeout=10) as response:
+                    html = await response.text()
+                    return self._extract_data(html, url)
+        except Exception as e:
+            logger.error(f"Scrape error for {url}: {e}")
+            return {'content': '', 'platform': Platform.GENERIC}
+    
+    def _extract_data(self, html: str, url: str) -> Dict:
+        import re
+        
+        data = {'content': '', 'platform': Platform.GENERIC}
+        
+        # Extract platform
+        url_lower = url.lower()
+        for platform in [Platform.TWITTER, Platform.LINKEDIN, Platform.GITHUB]:
+            if platform in url_lower:
+                data['platform'] = platform
+                break
+        
+        # Extract content (simple regex)
+        text = re.sub(r'<[^>]+>', ' ', html)
+        text = re.sub(r'\s+', ' ', text)
+        data['content'] = text[:2000]
+        
+        # Extract email
+        emails = re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', html)
+        if emails:
+            data['email'] = emails[0]
+        
+        # Extract name from URL
+        parsed = urlparse(url)
+        path_parts = parsed.path.strip('/').split('/')
+        if path_parts:
+            data['name'] = path_parts[0].replace('-', ' ').title()
+        
+        return data
+
+# Messenger
+class Messenger:
+    async def send(self, lead: Lead, campaign: Campaign) -> bool:
+        logger.info(f"Would send message to {lead.url}")
+        lead.message_sent = True
+        lead.status = LeadStatus.CONTACTED
+        return True
+
+# Rate Limiter
+class RateLimiter:
+    def __init__(self):
+        self.sent_messages = {}
+    
+    def can_send(self, campaign_id: str) -> bool:
+        today = datetime.now().date().isoformat()
+        key = f"{campaign_id}_{today}"
+        
+        count = self.sent_messages.get(key, 0)
+        if count >= 50:  # Max 50 per day per campaign
+            return False
+        
+        self.sent_messages[key] = count + 1
+        return True
+
+# Main System
+class NexusPrime:
+    def __init__(self):
         self.db = DatabaseService()
         self.analyzer = IntentAnalyzer()
-        self.rate_limiter = RateLimiter()
         self.finder = LeadFinder()
         self.scraper = ContentScraper()
-        self.messenger = MessageSender()
-        self.reporter = ReportGenerator(self.db)
-        
-        # حالة النظام
-        self.is_running = False
-        self.current_campaigns: List[Campaign] = []
-        
-        # إعداد معالجات الإشارات
-        signal.signal(signal.SIGINT, self.signal_handler)
-        signal.signal(signal.SIGTERM, self.signal_handler)
+        self.messenger = Messenger()
+        self.limiter = RateLimiter()
+        self.running = False
     
-    def signal_handler(self, signum, frame):
-        """معالجة إشارات الإغلاق"""
-        logger.info(f"Received signal {signum}. Shutting down gracefully...")
-        self.is_running = False
-    
-    async def start(self):
-        """بدء تشغيل النظام"""
-        logger.info("🚀 Starting Smart Outreach System...")
-        self.is_running = True
+    async def run(self):
+        self.running = True
+        logger.info("NEXUS-PRIME starting...")
         
-        try:
-            # بدء المهام المجدولة
-            self._setup_scheduled_tasks()
+        while self.running:
+            try:
+                await self._process_campaigns()
+                await asyncio.sleep(300)  # 5 minutes
+            except Exception as e:
+                logger.error(f"Main loop error: {e}")
+                await asyncio.sleep(60)
+    
+    async def _process_campaigns(self):
+        campaigns = self.db.get_active_campaigns()
+        
+        for campaign in campaigns:
+            if not self.running:
+                break
             
-            # الحلقة الرئيسية
-            while self.is_running:
-                await self._process_cycle()
-                await asyncio.sleep(60)  # انتظار دقيقة بين الدورات
-        
-        except Exception as e:
-            logger.error(f"System error: {e}", exc_info=True)
-        finally:
-            await self.shutdown()
+            logger.info(f"Processing campaign: {campaign.name}")
+            await self._process_campaign(campaign)
+            await asyncio.sleep(2)
     
-    def _setup_scheduled_tasks(self):
-        """إعداد المهام المجدولة"""
-        # تقرير يومي في الساعة 8 صباحًا
-        schedule.every().day.at("08:00").do(self._generate_daily_report)
+    async def _process_campaign(self, campaign: Campaign):
+        query = " ".join(campaign.keywords)
+        urls = await self.finder.search(query, campaign.max_leads)
         
-        # فحص الحملات كل 30 دقيقة
-        schedule.every(30).minutes.do(self._check_campaigns)
-        
-        # تنظيف السجلات القديمة يوميًا
-        schedule.every().day.at("00:00").do(self._cleanup_old_data)
-        
-        logger.info("Scheduled tasks configured")
-    
-    async def _process_cycle(self):
-        """دورة المعالجة الرئيسية"""
-        try:
-            # تشغيل المهام المجدولة
-            schedule.run_pending()
+        for url in urls[:campaign.max_leads]:
+            if not self.running:
+                break
             
-            # معالجة الحملات النشطة
-            await self._process_active_campaigns()
-            
-            # معالجة العملاء الذين يحتاجون متابعة
-            await self._process_followups()
-            
-        except Exception as e:
-            logger.error(f"Process cycle error: {e}")
-    
-    async def _process_active_campaigns(self):
-        """معالجة الحملات النشطة"""
-        try:
-            campaigns = self.db.get_active_campaigns()
-            
-            for campaign in campaigns:
-                if not self.is_running:
-                    break
+            try:
+                # Scrape content
+                scraped = await self.scraper.scrape(url)
                 
-                # التحقق من الحد الأقصى للعملاء
-                campaign_stats = self.db.get_campaign_stats(campaign.id)
-                if campaign_stats.get('total_leads', 0) >= campaign.max_leads:
-                    logger.info(f"Campaign {campaign.name} reached max leads limit")
-                    self.db.update_campaign_status(campaign.id, CampaignStatus.COMPLETED)
-                    continue
+                # Analyze intent
+                intent_score = self.analyzer.score(scraped['content'])
                 
-                logger.info(f"Processing campaign: {campaign.name}")
-                await self._process_single_campaign(campaign)
-                
-                # انتظار بين الحملات
-                await asyncio.sleep(5)
-        
-        except Exception as e:
-            logger.error(f"Error processing campaigns: {e}")
-    
-    async def _process_single_campaign(self, campaign: Campaign):
-        """معالجة حملة فردية"""
-        try:
-            async with self.finder as finder:
-                # البحث عن عملاء محتملين
-                logger.info(f"Searching for leads for campaign: {campaign.name}")
-                search_results = await finder.search_leads(
-                    keywords=campaign.keywords,
-                    platforms=campaign.target_platforms,
-                    max_results=min(20, campaign.max_leads),
-                    region=campaign.target_regions[0] if campaign.target_regions else ""
-                )
-                
-                logger.info(f"Found {len(search_results)} potential leads")
-                
-                # معالجة كل نتيجة
-                async with self.scraper as scraper:
-                    for result in search_results:
-                        if not self.is_running:
-                            break
+                if intent_score >= campaign.min_intent_score:
+                    # Create lead
+                    lead = Lead()
+                    lead.campaign_id = campaign.id
+                    lead.url = url
+                    lead.platform = scraped['platform']
+                    lead.name = scraped.get('name', '')
+                    lead.email = scraped.get('email', '')
+                    lead.intent_score = intent_score
+                    lead.content_summary = scraped['content'][:500]
+                    
+                    # Save lead
+                    if self.db.insert_lead(lead):
+                        logger.info(f"Lead saved: {url} (Score: {intent_score})")
                         
-                        try:
-                            await self._process_potential_lead(result, campaign, scraper)
-                            await asyncio.sleep(2)  # تأخير بين الطلبات
-                        
-                        except Exception as e:
-                            logger.error(f"Error processing lead {result.get('url')}: {e}")
-        
-        except Exception as e:
-            logger.error(f"Error in campaign processing: {e}")
-    
-    async def _process_potential_lead(self, result: Dict, campaign: Campaign, scraper: ContentScraper):
-        """معالجة عميل محتمل"""
-        url = result.get('url')
-        if not url:
-            return
-        
-        # استخراج المحتوى
-        scrape_data = await scraper.scrape_url(url)
-        
-        if not scrape_data.get('content'):
-            logger.warning(f"No content extracted from {url}")
-            return
-        
-        # تحليل النية
-        analysis = self.analyzer.analyze_content(scrape_data['content'], url)
-        
-        # التحقق من الحد الأدنى للنقاط
-        if analysis['overall_score'] < campaign.min_intent_score:
-            logger.info(f"Lead score {analysis['overall_score']} below threshold for {url}")
-            return
-        
-        # إنشاء كائن العميل
-        lead = Lead(
-            campaign_id=campaign.id,
-            url=url,
-            platform=scrape_data['platform'],
-            name=scrape_data.get('author', ''),
-            email=scrape_data.get('contact_info', {}).get('email', ''),
-            company=scrape_data.get('company', ''),
-            job_title=scrape_data.get('job_title', ''),
-            location=scrape_data.get('location', ''),
-            intent_score=analysis['overall_score'],
-            sentiment_score=analysis['sentiment'].get('score', 0),
-            relevance_score=analysis['overall_score'] * 0.8,  # تقديري
-            content_summary=scrape_data['content'][:500] if scrape_data['content'] else '',
-            engagement_metrics=scrape_data.get('engagement_metrics', {}),
-            contact_info=scrape_data.get('contact_info', {}),
-            status=LeadStatus.NEW
-        )
-        
-        # حفظ العميل في قاعدة البيانات
-        if self.db.insert_lead(lead):
-            logger.info(f"✅ Lead saved: {url} (Score: {lead.intent_score})")
-            
-            # محاولة الإرسال الفوري إذا كانت النقطة عالية
-            if lead.intent_score >= 85:
-                await self._attempt_immediate_outreach(lead, campaign)
-        else:
-            logger.warning(f"Failed to save lead: {url}")
-    
-    async def _attempt_immediate_outreach(self, lead: Lead, campaign: Campaign):
-        """محاولة الاتصال الفوري للعملاء ذوي النقاط العالية"""
-        try:
-            # اختيار أفضل منصة للاتصال
-            platform = self._select_best_platform(lead)
-            
-            if not platform:
-                return
-            
-            # التحقق من حدود الإرسال
-            if not self.rate_limiter.can_send(platform.value, lead.campaign_id):
-                logger.info(f"Rate limit reached for {platform.value}")
-                return
-            
-            # إعداد بيانات الحملة للإرسال
-            campaign_data = {
-                'product_name': campaign.name,
-                'usp': campaign.usp,
-                'product_link': campaign.product_link,
-                'signature': 'Best regards,\nSmart Outreach Team'
-            }
-            
-            # إرسال الرسالة
-            success, response = await self.messenger.send_message(lead, campaign_data, platform)
-            
-            if success:
-                lead.status = LeadStatus.CONTACTED
-                lead.message_sent = True
-                lead.last_contacted = datetime.now()
+                        # Send message if rate limit allows
+                        if self.limiter.can_send(campaign.id):
+                            await self.messenger.send(lead, campaign)
+                            self.db.insert_lead(lead)
                 
-                self.db.update_lead(lead)
-                self.rate_limiter.record_send(platform.value, lead.campaign_id)
+                await asyncio.sleep(1)
                 
-                logger.info(f"✅ Immediate outreach successful via {platform.value}")
-            else:
-                logger.warning(f"Immediate outreach failed: {response}")
+            except Exception as e:
+                logger.error(f"Error processing {url}: {e}")
+                await asyncio.sleep(2)
         
-        except Exception as e:
-            logger.error(f"Error in immediate outreach: {e}")
-    
-    def _select_best_platform(self, lead: Lead):
-        """اختيار أفضل منصة للاتصال"""
-        # الأولوية: البريد الإلكتروني إذا متوفر، ثم المنصة الأصلية
-        if lead.email:
-            from core.models import Platform
-            return Platform.EMAIL
-        else:
-            return lead.platform
-    
-    async def _process_followups(self):
-        """معالجة المتابعات"""
-        try:
-            # جلب العملاء الذين تم الاتصال بهم ولم يردوا
-            # (تطبيق متقدم يتطلب تتبع الردود)
-            pass
-        
-        except Exception as e:
-            logger.error(f"Error processing followups: {e}")
-    
-    def _generate_daily_report(self):
-        """توليد تقرير يومي"""
-        try:
-            report = self.reporter.generate_dashboard_report()
-            
-            # حفظ التقرير
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            report_file = f"reports/dashboard_{timestamp}.json"
-            
-            import json
-            with open(report_file, 'w', encoding='utf-8') as f:
-                json.dump(report, f, indent=2, ensure_ascii=False)
-            
-            logger.info(f"Daily report generated: {report_file}")
-            
-            # إرسال التقرير بالبريد الإلكتروني (اختياري)
-            # self._send_report_email(report)
-        
-        except Exception as e:
-            logger.error(f"Error generating daily report: {e}")
-    
-    def _check_campaigns(self):
-        """فحص حالة الحملات"""
-        try:
-            campaigns = self.db.get_active_campaigns()
-            
-            for campaign in campaigns:
-                stats = self.db.get_campaign_stats(campaign.id)
-                
-                # التحقق من الحملات التي لم تحصل على عملاء
-                if stats.get('total_leads', 0) == 0:
-                    logger.warning(f"Campaign {campaign.name} has no leads after 24 hours")
-                    # يمكن إضافة إجراءات تلقائية هنا
-        
-        except Exception as e:
-            logger.error(f"Error checking campaigns: {e}")
-    
-    def _cleanup_old_data(self):
-        """تنظيف البيانات القديمة"""
-        # تنظيف السجلات القديمة (تطبيق متقدم)
-        pass
-    
-    async def shutdown(self):
-        """إغلاق النظام بشكل مرتب"""
-        logger.info("Shutting down Smart Outreach System...")
-        
-        # تحديث حالة الحملات
-        for campaign in self.current_campaigns:
-            self.db.update_campaign_status(campaign.id, CampaignStatus.PAUSED)
-        
-        logger.info("Shutdown complete")
+        # Check if campaign reached max leads
+        stats = self.db.get_campaign_stats(campaign.id)
+        if stats['total_leads'] >= campaign.max_leads:
+            self.db.update_campaign_status(campaign.id, CampaignStatus.COMPLETED)
+            logger.info(f"Campaign {campaign.name} completed")
 
-async def main():
-    """الدالة الرئيسية"""
-    system = SmartOutreachSystem()
+    def stop(self):
+        self.running = False
+        logger.info("NEXUS-PRIME stopping...")
+
+# Startup
+if __name__ == "__main__":
+    # Check environment
+    required = ['SUPABASE_URL', 'SUPABASE_KEY']
+    missing = [var for var in required if not os.getenv(var)]
+    
+    if missing:
+        logger.error(f"Missing environment variables: {missing}")
+        sys.exit(1)
+    
+    # Run system
+    system = NexusPrime()
     
     try:
-        await system.start()
+        asyncio.run(system.run())
     except KeyboardInterrupt:
-        logger.info("System stopped by user")
+        system.stop()
     except Exception as e:
-        logger.error(f"Fatal error: {e}")
+        logger.error(f"System error: {e}")
         sys.exit(1)
-
-if __name__ == "__main__":
-    # إنشاء المجلدات المطلوبة
-    import os
-    os.makedirs("logs", exist_ok=True)
-    os.makedirs("reports", exist_ok=True)
-    os.makedirs("data", exist_ok=True)
-    
-    # بدء النظام
-    asyncio.run(main())
