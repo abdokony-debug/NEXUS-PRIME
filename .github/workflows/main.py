@@ -1,80 +1,53 @@
-import os
-import logging
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from datetime import datetime
-import pytz
-import requests
-import random
-import time
-from supabase import create_client, Client
+name: NEXUS-PRIME Smart Automation
 
-# ------------------------- Logging -------------------------
-logging.basicConfig(
-    filename='nexus_prime.log',
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+on:
+  workflow_dispatch:       # تشغيل يدوي
+  schedule:
+    - cron: "0 */6 * * *" # كل 6 ساعات
 
-# ------------------------- Environment -------------------------
-SMTP_SERVER = os.getenv("SMTP_SERVER")
-SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
-SMTP_USERNAME = os.getenv("SMTP_USERNAME")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-GOOGLE_CX = os.getenv("GOOGLE_CX")
+jobs:
+  nexus-prime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    env:
+      # Supabase
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
 
-MAX_SEARCH_RESULTS = int(os.getenv("MAX_SEARCH_RESULTS", 50))
+      # Google Custom Search
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      GOOGLE_CX: ${{ secrets.GOOGLE_CX }}
 
-# ------------------------- Helper Functions -------------------------
-def fetch_active_campaigns():
-    """جلب جميع الحملات النشطة"""
-    try:
-        response = supabase.table("campaigns").select("*").eq("status", "active").execute()
-        campaigns = response.data if response.data else []
-        logging.info(f"{len(campaigns)} active campaigns fetched.")
-        return campaigns
-    except Exception as e:
-        logging.error(f"Failed to fetch campaigns: {e}")
-        return []
+      # SMTP
+      SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+      SMTP_PORT: ${{ secrets.SMTP_PORT }}
+      SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
 
-def google_search(keywords, region, num_results=MAX_SEARCH_RESULTS):
-    """البحث في Google عن العملاء المحتملين"""
-    results = []
-    try:
-        start = 1
-        query = f"{keywords} {region}" if region else keywords
-        while len(results) < num_results:
-            url = f"https://www.googleapis.com/customsearch/v1?key={GOOGLE_API_KEY}&cx={GOOGLE_CX}&q={query}&start={start}"
-            r = requests.get(url)
-            if r.status_code != 200:
-                logging.warning(f"Google API returned {r.status_code}")
-                break
-            data = r.json()
-            items = data.get("items", [])
-            for item in items:
-                link = item.get("link")
-                snippet = item.get("snippet", "")
-                results.append({"link": link, "snippet": snippet})
-                if len(results) >= num_results:
-                    break
-            start += 10
-            time.sleep(1)
-    except Exception as e:
-        logging.error(f"Google search failed: {e}")
-    logging.info(f"Found {len(results)} search results for '{query}'")
-    return results
+      # اختياري: أقصى نتائج بحث Google
+      MAX_SEARCH_RESULTS: 50
 
-def extract_emails(search_results):
-    """استخراج أي بريد إلكتروني من النتائج"""
-    emails = set()
-    for r in search_results:
-        snippet = r.get("snippet", "")
-        words = snippet.split()
-        for w in words:
-            if "@" in w and "." i
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 🧠 Run NEXUS-PRIME SMART
+        run: python main.py
+
+      - name: 📊 Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-prime-logs
+          path: nexus_prime.log
