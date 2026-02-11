@@ -1,14 +1,11 @@
+import os
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
-    OPENAI_API_KEY: str
-    SUPABASE_URL: str
-    SUPABASE_KEY: str
-    GOOGLE_API_KEY: str
-    SMTP_USERNAME: str
-    SMTP_PASSWORD: str
-
-    class Config:
-        env_file = ".env"
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
+    SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
+    MAX_RETRIES: int = 3
+    MIN_INTENT_SCORE: int = 90
 
 settings = Settings()
