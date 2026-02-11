@@ -1,159 +1,132 @@
 import os
 import sys
-import re
 import json
-import smtplib
 import time
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 from supabase import create_client
 from groq import Groq
 from duckduckgo_search import DDGS
-from loguru import logger
 
-logger.remove()
-logger.add(sys.stderr, format="<green>{time:HH:mm:ss}</green> | <level>{message}</level>", level="INFO")
+# إعدادات النظام
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-class NexusConfig:
-    SUPABASE_URL = os.getenv("SUPABASE_URL")
-    SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-    GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-    EMAIL_HOST = "smtp.gmail.com"
-    EMAIL_PORT = 587
-    EMAIL_USER = os.getenv("EMAIL_USER")
-    EMAIL_PASS = os.getenv("EMAIL_PASS")
+# تهيئة قاعدة البيانات
+try:
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+except Exception as e:
+    print(f"Critical Error: {e}")
+    sys.exit(1)
 
-class SmartSender:
-    def extract_email(self, text):
-        match = re.search(r'[\w.+-]+@[\w-]+\.[\w.-]+', text)
-        return match.group(0) if match else None
-
-    def send_offer(self, to_email, subject, body):
-        if not NexusConfig.EMAIL_USER or not NexusConfig.EMAIL_PASS:
-            return False
-        try:
-            msg = MIMEMultipart()
-            msg['From'] = NexusConfig.EMAIL_USER
-            msg['To'] = to_email
-            msg['Subject'] = subject
-            msg.attach(MIMEText(body, 'plain'))
-            server = smtplib.SMTP(NexusConfig.EMAIL_HOST, NexusConfig.EMAIL_PORT)
-            server.starttls()
-            server.login(NexusConfig.EMAIL_USER, NexusConfig.EMAIL_PASS)
-            server.send_message(msg)
-            server.quit()
-            return True
-        except:
-            return False
+def log_to_db(event_type, message, campaign_name="System"):
+    """دالة لكتابة التقارير مباشرة في قاعدة البيانات"""
+    try:
+        print(f"[{event_type}] {message}")
+        supabase.table('system_logs').insert({
+            "event_type": event_type,
+            "message": str(message),
+            "campaign_name": campaign_name
+        }).execute()
+    except Exception as e:
+        print(f"Logging Error: {e}")
 
 class NeuralBrain:
     def __init__(self):
-        self.client = Groq(api_key=NexusConfig.GROQ_API_KEY)
+        self.client = Groq(api_key=GROQ_API_KEY)
 
-    def analyze_and_draft(self, lead_text, campaign):
+    def analyze(self, text, usp, link):
         prompt = f"""
-        Role: Elite Sales AI.
-        Mission: Identify if user wants to buy: '{campaign['keywords']}'.
-        Product Link: {campaign['product_link']}
-        USP: {campaign['usp']}
-        Input: "{lead_text}"
-        Output JSON:
+        Analyze this text for buying intent.
+        Product: {usp}
+        Link: {link}
+        Text: "{text}"
+        
+        Return JSON ONLY:
         {{
-            "score": int,
-            "is_buyer": bool,
-            "email_found": "email_or_null",
-            "subject": "short_subject",
-            "body": "persuasive_message_body"
+            "score": int (0-100),
+            "reason": "short explanation"
         }}
         """
         try:
             resp = self.client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
                 model="llama3-70b-8192",
-                temperature=0.1,
                 response_format={"type": "json_object"}
             )
             return json.loads(resp.choices[0].message.content)
-        except:
-            return None
-
-class NexusEngine:
-    def __init__(self):
-        self.supabase = create_client(NexusConfig.SUPABASE_URL, NexusConfig.SUPABASE_KEY)
-        self.hunter = DDGS()
-        self.brain = NeuralBrain()
-        self.sender = SmartSender()
-
-    def run(self):
-        logger.info("🚀 NEXUS-PRIME ENGINE STARTED")
-        try:
-            campaigns = self.supabase.table('campaigns').select("*").eq('status', 'active').execute().data
         except Exception as e:
-            logger.error(f"DB Error: {e}")
-            return
+            log_to_db("ERROR", f"Brain Malfunction: {e}")
+            return {"score": 0, "reason": "Error"}
 
-        if not campaigns:
-            logger.warning("No active campaigns found.")
-            return
+def run_nexus():
+    log_to_db("INFO", "🚀 System Started. Fetching missions...")
 
-        for camp in campaigns:
-            quota = camp.get('max_leads') or 5
-            sent_count = 0
-            keywords_list = [k.strip() for k in camp['keywords'].split(',')]
+    # 1. جلب الحملات
+    try:
+        response = supabase.table('campaigns').select("*").eq('status', 'active').execute()
+        campaigns = response.data
+    except Exception as e:
+        log_to_db("ERROR", f"Database Fetch Error: {e}")
+        return
 
-            logger.info(f"⚔️ Campaign: {camp['name']} | Targets: {keywords_list}")
+    if not campaigns:
+        log_to_db("WARNING", "No active campaigns found. Please check 'status' column.")
+        return
 
-            for keyword in keywords_list:
-                if sent_count >= quota: break
+    hunter = DDGS()
+    brain = NeuralBrain()
 
-                query = f'"{keyword}" (site:reddit.com OR site:twitter.com OR site:quora.com)'
-                if camp.get('target_region'):
-                    query += f' location:"{camp["target_region"]}"'
-
-                logger.info(f"🔎 Scanning: {query}")
-
-                try:
-                    results = self.hunter.text(query, max_results=10)
-                    if not results: continue
-
-                    for res in results:
-                        if sent_count >= quota: break
-                        
-                        content = f"{res['title']} {res['body']}"
-                        analysis = self.brain.analyze_and_draft(content, camp)
-
-                        if analysis and analysis.get('score', 0) > 80:
-                            target_email = analysis.get('email_found') or self.sender.extract_email(content)
-                            status = "ready"
-                            
-                            if target_email:
-                                sent = self.sender.send_offer(target_email, analysis.get('subject', 'Offer'), analysis.get('body', 'Hi'))
-                                status = "sent" if sent else "failed"
-                                logger.success(f"📧 EMAIL SENT to {target_email}")
-                            else:
-                                logger.info(f"💾 Lead Captured (No Email) - Score: {analysis['score']}")
-
-                            lead_data = {
-                                "campaign_id": camp['id'],
-                                "url": res['href'],
-                                "intent_score": analysis['score'],
-                                "ai_analysis": str(analysis),
-                                "message_draft": analysis.get('body'),
-                                "status": status,
-                                "created_at": datetime.utcnow().isoformat()
-                            }
-                            
-                            self.supabase.table('leads').upsert(lead_data, on_conflict='url').execute()
-                            sent_count += 1
-                    
-                    time.sleep(1)
-
-                except Exception as e:
-                    logger.error(f"Search Loop Error: {e}")
-                    continue
+    for camp in campaigns:
+        camp_name = camp['name']
+        log_to_db("INFO", f"Starting Campaign: {camp_name}", camp_name)
+        
+        keywords = [k.strip() for k in camp['keywords'].split(',')]
+        leads_processed = 0
+        
+        for keyword in keywords:
+            query = f'"{keyword}" (site:reddit.com OR site:twitter.com)'
+            if camp.get('target_region'):
+                query += f' location:"{camp["target_region"]}"'
             
-            logger.success(f"✅ Campaign '{camp['name']}' Completed. Leads Processed: {sent_count}")
+            log_to_db("INFO", f"Searching for: {query}", camp_name)
+            
+            try:
+                results = hunter.text(query, max_results=5)
+                if not results:
+                    log_to_db("WARNING", f"No results found for keyword: {keyword}", camp_name)
+                    continue
+                
+                log_to_db("INFO", f"Found {len(results)} raw results. Analyzing...", camp_name)
+
+                for res in results:
+                    content = f"{res['title']} {res['body']}"
+                    analysis = brain.analyze(content, camp['usp'], camp['product_link'])
+                    
+                    if analysis['score'] > 80:
+                        # حفظ العميل المؤكد
+                        lead_data = {
+                            "campaign_id": camp['id'],
+                            "url": res['href'],
+                            "intent_score": analysis['score'],
+                            "ai_analysis": analysis['reason'],
+                            "status": "ready"
+                        }
+                        supabase.table('leads').upsert(lead_data, on_conflict='url').execute()
+                        log_to_db("SUCCESS", f"Lead Secured! Score: {analysis['score']}", camp_name)
+                        leads_processed += 1
+                    else:
+                        # (اختياري) يمكننا تسجيل الفشل لنعرف لماذا رفضه
+                        # log_to_db("INFO", f"Low Score ({analysis['score']}): {analysis['reason']}", camp_name)
+                        pass
+
+            except Exception as e:
+                log_to_db("ERROR", f"Search Error: {e}", camp_name)
+                continue
+            
+            time.sleep(2) # راحة لتجنب الحظر
+
+        log_to_db("INFO", f"Campaign Finished. Total Leads: {leads_processed}", camp_name)
 
 if __name__ == "__main__":
-    NexusEngine().run()
+    run_nexus()
