@@ -1,40 +1,36 @@
-import asyncio
-import logging
+from core.database import DatabaseService
 from core.cyber_hunter import CyberHunter
-from services.finder import LeadFinder
-from services.messenger import MessageSender
 from core.neural_engine import NeuralEngine
+from loguru import logger
 
-logging.basicConfig(level=logging.INFO, filename="nexus.log")
-
-class NexusPrime:
+class NexusOrchestrator:
     def __init__(self):
-        self.ai = NeuralEngine()
+        self.db = DatabaseService()
         self.hunter = CyberHunter()
-        self.sender = MessageSender()
+        self.engine = NeuralEngine()
 
-    async def intelligence_cycle(self):
-        logging.info("🧠 Intelligence cycle started")
-
-        targets = self.hunter.scan("AI SaaS automation business")
-        logging.info(f"Targets found: {len(targets)}")
-
-        async with LeadFinder() as finder:
-            leads = await finder.search_leads(["AI automation", "marketing SaaS"], [])
-
-        for lead in leads[:10]:
-            decision = self.ai.decide_action(lead)
-            if decision == "ENGAGE":
-                await self.sender.send_message(lead, {}, lead.platform)
-
-    async def run_forever(self):
-        while True:
-            try:
-                await self.intelligence_cycle()
-                await asyncio.sleep(3600)  # كل ساعة
-            except Exception as e:
-                logging.error(f"CRITICAL ERROR: {e}")
-                await asyncio.sleep(30)
-
-if __name__ == "__main__":
-    asyncio.run(NexusPrime().run_forever())
+    def run(self):
+        missions = self.db.fetch_active_campaigns()
+        for mission in missions:
+            leads_acquired = 0
+            max_leads = mission.get('max_leads', 5)
+            
+            raw_leads = self.hunter.scan(mission['keywords'], mission['target_region'])
+            
+            for lead in raw_leads:
+                if leads_acquired >= max_leads:
+                    break
+                
+                content = f"{lead['title']} {lead['body']}"
+                result = self.engine.analyze(content, mission['usp'], mission['product_link'])
+                
+                if result.get('is_confirmed'):
+                    self.db.log_lead({
+                        "campaign_id": mission['id'],
+                        "url": lead['href'],
+                        "intent_score": result['score'],
+                        "ai_analysis": result['analysis'],
+                        "message_draft": result['message'],
+                        "status": "confirmed"
+                    })
+                    leads_acquired += 1
