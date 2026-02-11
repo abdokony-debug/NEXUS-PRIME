@@ -1,7 +1,7 @@
 groq
 supabase
-duckduckgo-search
+duckduckgo-search>=6.0.0
 pydantic
 loguru
 tenacity
-python-dotenv
+secure-smtplib
