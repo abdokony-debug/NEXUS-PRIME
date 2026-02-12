@@ -1,0 +1,38 @@
+name: 🚀 NEXUS-PRIME ENGINE
+
+on:
+  workflow_dispatch:  # زر التشغيل اليدوي
+  schedule:
+    - cron: '0 */6 * * *'  # تشغيل تلقائي كل 6 ساعات
+
+jobs:
+  run_marketing_core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15  # يقتل العملية إذا علقت لأكثر من 15 دقيقة
+    
+    steps:
+      - name: 📥 استنساخ المستودع (Clone Repo)
+        uses: actions/checkout@v4
+
+      - name: 🐍 تهيئة بيئة بايثون (Setup Python)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 📦 تثبيت المكتبات (Install Dependencies)
+        run: |
+          pip install --upgrade pip
+          pip install groq supabase duckduckgo-search loguru tenacity
+
+      - name: 📂 فحص الملفات (Debug Files)
+        run: |
+          ls -la  # عرض الملفات للتأكد من وجود main.py
+          echo "Current Directory: $(pwd)"
+
+      - name: 🔥 إطلاق النظام (Ignition)
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python main.py
