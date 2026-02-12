@@ -3,35 +3,25 @@ import sys
 import re
 import json
 import time
+import random
+import requests
 import smtplib
+from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from datetime import datetime
+
+# Libraries
 from supabase import create_client
 from groq import Groq
 from duckduckgo_search import DDGS
+from fake_useragent import UserAgent
+from loguru import logger
 
-# إعداد السجلات (Logging System)
-def log(msg, level="INFO"):
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    # طباعة ملونة لتسهيل القراءة في GitHub Actions
-    colors = {"INFO": "\033[94m", "SUCCESS": "\033[92m", "WARNING": "\033[93m", "ERROR": "\033[91m", "END": "\033[0m"}
-    color = colors.get(level, colors["INFO"])
-    print(f"{color}[{timestamp}] {level}: {msg}{colors['END']}", flush=True)
+# --- SETUP LOGGING ---
+logger.remove()
+logger.add(sys.stderr, format="<green>{time:HH:mm:ss}</green> | <level>{message}</level>", level="INFO")
 
-log("🚀 SYSTEM BOOT: NEXUS-PRIME INTELLIGENT ENGINE LOADING...")
-
-# 1. فحص المكتبات
-try:
-    from supabase import create_client
-    from groq import Groq
-    from duckduckgo_search import DDGS
-    log("✅ Core Libraries Loaded.")
-except ImportError as e:
-    log(f"CRITICAL ERROR: Library missing - {e}", "ERROR")
-    sys.exit(1)
-
-# 2. إعداد الاتصال
+# --- CONFIGURATION ---
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -39,175 +29,183 @@ EMAIL_USER = os.getenv("EMAIL_USER")
 EMAIL_PASS = os.getenv("EMAIL_PASS")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    log("Secrets Missing! Check GitHub Settings.", "FATAL")
+    logger.critical("❌ FATAL: Database credentials missing.")
     sys.exit(1)
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-brain = Groq(api_key=GROQ_API_KEY)
-hunter = DDGS()
+# --- CORE CLASSES ---
 
-# --- أدوات المساعدة ---
+class StealthNetwork:
+    """مسؤول عن التخفي وتغيير الهوية الرقمية"""
+    def __init__(self):
+        self.ua = UserAgent()
+        self.proxies = [] # يمكن تفعيل جلب البروكسيات هنا
+        
+    def get_headers(self):
+        """توليد هوية متصفح جديدة في كل طلب"""
+        return {
+            "User-Agent": self.ua.random,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Connection": "keep-alive",
+            "Referer": "https://www.google.com/"
+        }
 
-def clean_keyword(kw):
-    """تنظيف الكلمة المفتاحية من الرموز التي يكتبها المستخدم بالخطأ"""
-    # حذف علامات التنصيص والشرطات السفلية والمسافات الزائدة
-    return kw.replace('"', '').replace("'", "").replace("_", " ").strip()
-
-def send_email(to_email, subject, body):
-    if not EMAIL_USER or not EMAIL_PASS:
-        return False
-    try:
-        msg = MIMEMultipart()
-        msg['From'] = EMAIL_USER
-        msg['To'] = to_email
-        msg['Subject'] = subject
-        msg.attach(MIMEText(body, 'plain'))
-        server = smtplib.SMTP("smtp.gmail.com", 587)
-        server.starttls()
-        server.login(EMAIL_USER, EMAIL_PASS)
-        server.send_message(msg)
-        server.quit()
-        return True
-    except Exception as e:
-        log(f"Email Error: {e}", "ERROR")
-        return False
-
-def extract_email(text):
-    match = re.search(r'[\w.+-]+@[\w-]+\.[\w.-]+', text)
-    return match.group(0) if match else None
-
-# --- المحرك الرئيسي ---
-
-def run_nexus():
-    log("⚡ CONNECTING TO DATABASE...")
+class MultiEngineSearch:
+    """محرك بحث متعدد الرؤوس (هيدرا)"""
+    def __init__(self):
+        self.ddgs = DDGS()
+        self.network = StealthNetwork()
     
-    try:
-        response = supabase.table('campaigns').select("*").eq('status', 'active').execute()
-        campaigns = response.data
-    except Exception as e:
-        log(f"DB Fetch Error: {e}", "ERROR")
-        return
+    def search_duckduckgo(self, query):
+        """المحاولة الأولى: DuckDuckGo"""
+        try:
+            # backend='lite' هو الأسرع والأقل حظراً
+            results = self.ddgs.text(query, max_results=8, backend='lite')
+            if results: return results
+        except Exception as e:
+            logger.warning(f"⚠️ DDG Failed: {e}")
+        return []
 
-    if not campaigns:
-        log("⚠️ No active campaigns found. Please set status='active' in Supabase.", "WARNING")
-        return
-
-    log(f"📋 Found {len(campaigns)} active campaigns.")
-
-    for camp in campaigns:
-        # إعدادات الحملة
-        quota = camp.get('max_leads') or 5
-        leads_acquired = 0
-        
-        # تنظيف وفصل الكلمات المفتاحية بذكاء
-        raw_keywords = camp.get('keywords', '')
-        # نفصل بالفواصل، وإذا لم توجد فواصل نعتبرها جملة واحدة
-        keywords = [clean_keyword(k) for k in raw_keywords.split(',') if k.strip()]
-        
-        log(f"⚔️ Campaign: {camp['name']} | Quota: {quota} Leads | Keywords: {keywords}")
-
-        # حلقة البحث (لن تتوقف حتى تجد العدد المطلوب أو تنتهي الكلمات)
-        for keyword in keywords:
-            if leads_acquired >= quota: break
+    def search_google_fallback(self, query):
+        """المحاولة الثانية: محاكاة بحث جوجل"""
+        # ملاحظة: هذا السكريبت يحاول قراءة جوجل كمتصفح
+        # في بيئة GitHub قد يكون صعباً، لكننا نضعه كاحتياطي
+        try:
+            logger.info("🔄 Switching to Google Scraping Mode...")
+            headers = self.network.get_headers()
+            params = {'q': query, 'num': 10}
+            response = requests.get('https://www.google.com/search', headers=headers, params=params, timeout=10)
             
-            # --- استراتيجية البحث المتدرج ---
-            search_strategies = [
-                # 1. بحث دقيق في منصات النقاش (High Intent)
-                f'{keyword} (site:reddit.com OR site:quora.com) "recommend"',
-                # 2. بحث في تويتر (Realtime)
-                f'{keyword} site:twitter.com',
-                # 3. بحث عام واسع (Broad)
-                f'{keyword} review or best',
-                # 4. الملاذ الأخير
-                f'{keyword}'
-            ]
+            if response.status_code == 200:
+                # استخراج بسيط جداً (Regex) لتفادي تعقيد HTML
+                # هذه طريقة 'قذرة' لكنها فعالة للطوارئ
+                links = re.findall(r'href="/url\?q=(https://[^&]+)', response.text)
+                clean_results = []
+                for link in links[:5]:
+                    if "google" not in link:
+                        clean_results.append({'title': 'Google Result', 'body': 'Found via Google Fallback', 'href': link})
+                return clean_results
+        except Exception as e:
+            logger.error(f"❌ Google Fallback Failed: {e}")
+        return []
 
-            for query in search_strategies:
-                if leads_acquired >= quota: break
-                
-                log(f"🔎 Scanning Strategy: {query}")
-                
-                try:
-                    # البحث
-                    results = hunter.text(query, max_results=8)
+    def execute_search(self, query):
+        """المدير الذي يقرر أي محرك يستخدم"""
+        # 1. جرب DuckDuckGo
+        results = self.search_duckduckgo(query)
+        if results: return results
+        
+        # 2. انتظر قليلاً وجرب جوجل
+        time.sleep(random.uniform(2, 5))
+        return self.search_google_fallback(query)
+
+class NeuralBrain:
+    def __init__(self):
+        self.client = Groq(api_key=GROQ_API_KEY)
+
+    def analyze(self, content, campaign):
+        prompt = f"""
+        Role: Marketing Sniper.
+        Product: {campaign['product_link']}
+        USP: {campaign['usp']}
+        Content: "{content[:1000]}"
+        
+        Task:
+        1. Is this relevant? (True/False)
+        2. Score Intent (0-100).
+        3. Draft Email.
+        
+        Return JSON: {{ "score": int, "is_relevant": bool, "subject": "str", "body": "str" }}
+        """
+        try:
+            completion = self.client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model="llama3-70b-8192",
+                response_format={"type": "json_object"}
+            )
+            return json.loads(completion.choices[0].message.content)
+        except:
+            return {"score": 0, "is_relevant": False}
+
+class NexusHydra:
+    def __init__(self):
+        self.supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        self.search_engine = MultiEngineSearch()
+        self.brain = NeuralBrain()
+
+    def run(self):
+        logger.info("🐉 NEXUS-HYDRA: ACTIVATED. ADAPTIVE MODE ON.")
+        
+        try:
+            campaigns = self.supabase.table('campaigns').select("*").eq('status', 'active').execute().data
+        except Exception as e:
+            logger.error(f"DB Connection Failed: {e}")
+            return
+
+        if not campaigns:
+            logger.warning("No active missions.")
+            return
+
+        for camp in campaigns:
+            quota = camp.get('max_leads') or 5
+            acquired = 0
+            
+            # تنظيف الكلمات
+            keywords = [k.strip() for k in camp['keywords'].replace('"', '').split(',')]
+            
+            logger.info(f"⚔️ Mission: {camp['name']} | Targets: {keywords}")
+
+            for kw in keywords:
+                if acquired >= quota: break
+
+                # استراتيجيات ذكية متغيرة
+                queries = [
+                    f'{kw} site:reddit.com',         # استراتيجية 1: المنتديات
+                    f'{kw} "looking for"',           # استراتيجية 2: النية المباشرة
+                    f'best {kw} 2025',               # استراتيجية 3: البحث العام
+                ]
+
+                for q in queries:
+                    if acquired >= quota: break
+                    
+                    logger.info(f"🔎 Hunting: {q}")
+                    results = self.search_engine.execute_search(q)
                     
                     if not results:
-                        log(f"   -> No results for strategy. Switching...", "WARNING")
-                        continue # جرب الاستراتيجية التالية
-
-                    log(f"   -> Found {len(results)} signals. Neural Analysis Running...")
-
+                        logger.warning("   -> No signals. Adapting...")
+                        continue
+                    
+                    logger.info(f"   -> Found {len(results)} signals. Analyzing...")
+                    
                     for res in results:
-                        if leads_acquired >= quota: break
+                        if acquired >= quota: break
                         
-                        content = f"{res['title']} \n {res['body']}"
+                        # دمج العنوان مع الوصف للتحليل
+                        content = f"{res.get('title', '')} {res.get('body', '')}"
+                        analysis = self.brain.analyze(content, camp)
                         
-                        # الذكاء الاصطناعي (Llama 3 70B)
-                        prompt = f"""
-                        Act as a Lead Generation Agent.
-                        Product: {camp['product_link']}
-                        USP: {camp['usp']}
-                        Content: "{content}"
-                        
-                        Task:
-                        1. Does this user have a problem my product can solve?
-                        2. Rate Intent (0-100).
-                        3. Draft a short, direct message.
-                        
-                        Return JSON: {{ "score": int, "reason": "str", "subject": "str", "body": "str" }}
-                        """
-                        
-                        try:
-                            completion = brain.chat.completions.create(
-                                messages=[{"role": "user", "content": prompt}],
-                                model="llama3-70b-8192",
-                                response_format={"type": "json_object"}
-                            )
-                            analysis = json.loads(completion.choices[0].message.content)
-                        except:
-                            continue # Skip failed AI calls
-
-                        # الفلترة (فوق 75)
                         if analysis.get('score', 0) > 75:
-                            target_email = extract_email(content)
-                            status = "ready"
+                            logger.success(f"   🎯 TARGET LOCKED (Score: {analysis['score']})")
                             
-                            # محاولة الإرسال
-                            if target_email:
-                                sent = send_email(target_email, analysis['subject'], analysis['body'])
-                                if sent:
-                                    status = "sent"
-                                    log(f"📧 EMAIL SENT to {target_email}", "SUCCESS")
-                                else:
-                                    log(f"❌ Email found but failed to send.", "WARNING")
-                            else:
-                                log(f"💾 Captured High-Intent Lead (Score: {analysis['score']})", "SUCCESS")
-
-                            # الحفظ في قاعدة البيانات
-                            lead_data = {
+                            # الحفظ
+                            self.supabase.table('leads').upsert({
                                 "campaign_id": camp['id'],
                                 "url": res['href'],
                                 "intent_score": analysis['score'],
-                                "ai_analysis": analysis['reason'],
-                                "message_draft": analysis['body'],
-                                "status": status,
+                                "ai_analysis": str(analysis),
+                                "message_draft": analysis.get('body'),
+                                "status": "ready",
                                 "created_at": datetime.utcnow().isoformat()
-                            }
-                            supabase.table('leads').upsert(lead_data, on_conflict='url').execute()
-                            leads_acquired += 1
+                            }, on_conflict='url').execute()
+                            
+                            acquired += 1
                         
-                    time.sleep(1) # راحة قصيرة
+                    time.sleep(random.uniform(1, 3)) # استراحة بشرية
 
-                except Exception as e:
-                    log(f"Search Error: {e}", "ERROR")
-                    continue
-        
-        if leads_acquired >= quota:
-            log(f"✅ Mission Accomplished: Secured {leads_acquired} Leads.", "SUCCESS")
-        else:
-            log(f"⚠️ Mission Finished. Secured {leads_acquired}/{quota} Leads. (Add more keywords)", "WARNING")
-
-    log("🏁 SYSTEM SHUTDOWN.", "INFO")
+            if acquired > 0:
+                logger.success(f"✅ Campaign {camp['name']} finished with {acquired} leads.")
+            else:
+                logger.error(f"❌ Campaign {camp['name']} failed to find targets. Try broader keywords.")
 
 if __name__ == "__main__":
-    run_nexus()
+    NexusHydra().run()
