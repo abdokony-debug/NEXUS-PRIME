@@ -1,5 +1,9 @@
 groq
 supabase
 duckduckgo-search
+google-search-results
+fake-useragent
+requests
+beautifulsoup4
 loguru
 tenacity
